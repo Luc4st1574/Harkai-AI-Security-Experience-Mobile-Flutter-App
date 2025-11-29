@@ -1,0 +1,100 @@
+name: harkai
+description: "An innovative security app created by citizens, designed to empower and protect communities."
+publish_to: 'none'
+
+version: 3.8.5+2
+
+environment:
+  sdk: ^3.5.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
+  # --- UI & Icons ---
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.3.2
+  fluttertoast: ^9.0.0
+  flutter_launcher_icons: ^0.14.4
+
+  # --- FIREBASE SUITE (Updated to latest major versions) ---
+  # These versions are required to work with firebase_ai 3.6.0
+  firebase_core: ^4.2.1
+  firebase_auth: ^6.1.2
+  cloud_firestore: ^6.1.0
+  firebase_storage: ^13.0.4
+  firebase_app_check: ^0.4.1
+  firebase_ai: ^3.6.0
+
+  # --- Geo & Maps ---
+  # geoflutterfire_plus must be updated to 0.0.33 to support new firestore
+  geoflutterfire_plus: ^0.0.33
+  google_maps_flutter: ^2.14.0
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  location_geocoder: ^1.0.5
+  flutter_google_maps_webservices: ^1.1.1
+  flutter_polyline_points: ^3.1.0
+
+  # --- Auth & Social ---
+  google_sign_in: ^7.2.0
+
+  # --- System & Storage ---
+  url_launcher: ^6.3.2
+  permission_handler: ^12.0.1
+  flutter_dotenv: ^6.0.0
+  shared_preferences: ^2.5.0
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  workmanager: ^0.9.0
+  http: ^1.6.0
+
+  # --- Media (Audio/Image) ---
+  record: ^6.1.2
+  image_picker: ^1.2.1
+
+  # --- Payments & Notifications ---
+  pay: ^3.3.0
+  flutter_local_notifications: ^19.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/icon.png"
+  min_sdk_android: 23
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon/icon.png"
+
+flutter:
+  uses-material-design: true
+  generate: true
+
+  assets:
+  - assets/images/background.png
+  - assets/images/logo.png
+  - assets/images/google_logo.png
+  - assets/images/bot.png
+  - assets/images/car.png
+  - assets/images/dog.png
+  - assets/images/fire.png
+  - assets/images/theft.png
+  - assets/images/alert.png
+  - assets/images/events_icon.png
+  - assets/images/brown_pin.png
+  - assets/icon/icon.png
+  - assets/images/tap_position_marker.png
+  - assets/images/place_icon.png
+  - assets/images/incident_buttons.jpg
+  - assets/
+  - assets/images/
+  - .env
+  - google_pay.json
+  - assets/json/google_pay.json
