@@ -17,6 +17,7 @@ import '../utils/markers.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
 
 enum MediaInputState {
+  contactInfoInput, // NEW: State for entering contact info first
   idle,
   recordingAudio,
   audioRecordedReadyToSend,
@@ -139,8 +140,36 @@ class _IncidentVoiceDescriptionModalState
     }
 
     if (mounted) {
+      // CHECK: If contact info is needed, start with that state
+      if (_needsContactInfo()) {
+        _currentInputState = MediaInputState.contactInfoInput;
+      } else {
+        _currentInputState = MediaInputState.idle;
+      }
       _updateStatusAndInstructionText();
     }
+  }
+
+  bool _needsContactInfo() {
+    return widget.markerType == MakerType.pet ||
+        widget.markerType == MakerType.event ||
+        widget.markerType == MakerType.place;
+  }
+
+  void _handleContactSubmit() {
+    if (_contactInfoController.text.trim().length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                "Por favor ingrese un número válido (mínimo 6 dígitos).")), // Spanish
+      );
+      return;
+    }
+    // Valid contact info, proceed to audio recording
+    setState(() {
+      _currentInputState = MediaInputState.idle;
+      _updateStatusAndInstructionText();
+    });
   }
 
   void _handleError(String errorMessage,
@@ -539,17 +568,14 @@ class _IncidentVoiceDescriptionModalState
       }
       if (updateState) {
         setState(() {
+          // If we are clearing all data, and contact info is needed,
+          // we should theoretically go back to idle (recording), NOT contact info.
+          // Contact info persists in the controller.
           _currentInputState = MediaInputState.idle;
           _updateStatusAndInstructionText();
         });
       }
     }
-  }
-
-  bool _needsContactInfo() {
-    return widget.markerType == MakerType.pet ||
-        widget.markerType == MakerType.event ||
-        widget.markerType == MakerType.place;
   }
 
   Future<void> _handleFinalSubmitIncident() async {
@@ -568,11 +594,12 @@ class _IncidentVoiceDescriptionModalState
       return;
     }
 
+    // Secondary check for Contact Info (just in case)
     if (_needsContactInfo() && _contactInfoController.text.trim().length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content:
-                Text("Please enter a valid contact number (min 6 digits).")),
+            content: Text(
+                "Por favor ingrese un número válido (mínimo 6 dígitos).")), // Spanish
       );
       return;
     }
@@ -674,6 +701,11 @@ class _IncidentVoiceDescriptionModalState
         markerDetails?.title ?? widget.markerType.name.capitalizeAllWords();
 
     switch (_currentInputState) {
+      case MediaInputState.contactInfoInput:
+        _statusText = "Información de Contacto"; // Spanish
+        _userInstructionText =
+            "Por favor, ingrese un número de teléfono para contactarlo si es necesario."; // Spanish
+        break;
       case MediaInputState.idle:
         _statusText =
             _localizations!.incidentModalStep1ReportAudioTitle(incidentName);
@@ -711,16 +743,10 @@ class _IncidentVoiceDescriptionModalState
             .incidentModalInstructionConfirmAudio(_geminiAudioProcessedText);
         break;
       case MediaInputState.displayingConfirmedAudio:
-        if (_needsContactInfo()) {
-          _statusText = "Details & Contact Info";
-          _userInstructionText =
-              "Please confirm details and add a contact number.";
-        } else {
-          _statusText = _localizations!.incidentModalStatusStep2AddImage;
-          _userInstructionText = _localizations!
-              .incidentModalInstructionAddImageOrSubmit(
-                  _confirmedAudioDescription);
-        }
+        _statusText = _localizations!.incidentModalStatusStep2AddImage;
+        _userInstructionText = _localizations!
+            .incidentModalInstructionAddImageOrSubmit(
+                _confirmedAudioDescription);
         break;
       case MediaInputState.awaitingImageCapture:
         _statusText = _localizations!.incidentModalStatusCapturingImage;
@@ -804,6 +830,8 @@ class _IncidentVoiceDescriptionModalState
             MediaInputState.audioDescriptionReadyForConfirmation;
 
     bool isTextInputActive = _currentInputState == MediaInputState.textInput;
+    bool isContactInputActive =
+        _currentInputState == MediaInputState.contactInfoInput;
 
     bool showStep2ImageRelatedUI =
         _currentInputState == MediaInputState.displayingConfirmedAudio ||
@@ -859,6 +887,49 @@ class _IncidentVoiceDescriptionModalState
                     textAlign: TextAlign.center),
               ),
               const SizedBox(height: 15),
+
+              // --- CONTACT INFO SCREEN (First Step if needed) ---
+              if (isContactInputActive)
+                Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _contactInfoController,
+                      keyboardType: TextInputType.phone,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: "Información de contacto (REQUERIDO)",
+                        labelStyle: TextStyle(color: accentColor),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide:
+                              BorderSide(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: accentColor),
+                        ),
+                        prefixIcon: Icon(Icons.phone, color: accentColor),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: _handleContactSubmit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 40, vertical: 12),
+                      ),
+                      child: const Text(
+                        "Continuar", // Spanish
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+
+              // --- CONFIRMED AUDIO UI ---
               IncidentModalUiBuilders.buildConfirmedAudioArea(
                 shouldShow: showStep2ImageRelatedUI ||
                     _currentInputState == MediaInputState.imagePreview,
@@ -866,6 +937,8 @@ class _IncidentVoiceDescriptionModalState
                 accentColor: accentColor,
                 localizations: _localizations!,
               ),
+
+              // --- IMAGE PREVIEW UI ---
               IncidentModalUiBuilders.buildImagePreviewArea(
                 shouldShow: _capturedImageFile != null &&
                     (showStep2ImageRelatedUI ||
@@ -879,29 +952,8 @@ class _IncidentVoiceDescriptionModalState
                 localizations: _localizations!,
               ),
               const SizedBox(height: 10),
-              if (_needsContactInfo() &&
-                  showStep2ImageRelatedUI &&
-                  !isProcessingAny)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 15.0),
-                  child: TextField(
-                    controller: _contactInfoController,
-                    keyboardType: TextInputType.phone,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      labelText: "Contact Phone Number (Required)",
-                      labelStyle: TextStyle(color: accentColor),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide:
-                            BorderSide(color: Colors.white.withOpacity(0.3)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: accentColor),
-                      ),
-                      prefixIcon: Icon(Icons.phone, color: accentColor),
-                    ),
-                  ),
-                ),
+
+              // --- STANDARD MEDIA INPUT CONTROLS ---
               if (isProcessingAny)
                 IncidentModalUiBuilders.buildProcessingIndicator(
                     accentColor: accentColor,
@@ -913,7 +965,7 @@ class _IncidentVoiceDescriptionModalState
                   onRetryFullProcess: _handleRetryFullProcess,
                   localizations: _localizations!,
                 )
-              else
+              else if (!isContactInputActive) // Hide standard controls if on contact screen
                 Column(
                   children: [
                     if (isTextInputActive)
