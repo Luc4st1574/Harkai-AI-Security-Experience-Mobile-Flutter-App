@@ -1,4 +1,3 @@
-// lib/features/incident_feed/screens/incident_screen.dart
 import 'dart:async'; // Required for StreamSubscription
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,7 +8,7 @@ import 'package:harkai/features/home/widgets/header.dart';
 import 'package:harkai/core/services/location_service.dart';
 import 'package:harkai/features/home/screens/home.dart';
 import 'package:harkai/l10n/app_localizations.dart';
-// import 'package:pay/pay.dart'; // Commented out for fake button
+import 'package:harkai/core/services/phone_service.dart'; // Import PhoneService
 import '../widgets/incident_tile.dart';
 import '../widgets/map_view.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
@@ -17,7 +16,6 @@ import 'package:harkai/features/home/utils/extensions.dart';
 class IncidentScreen extends StatefulWidget {
   final MakerType incidentType;
   final User? currentUser;
-  // NEW: Accept current location text to show it instantly (Speed Optimization)
   final String? currentLocationText;
 
   const IncidentScreen({
@@ -34,6 +32,7 @@ class IncidentScreen extends StatefulWidget {
 class _IncidentScreenState extends State<IncidentScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   final LocationService _locationService = LocationService();
+  final PhoneService _phoneService = PhoneService(); // Initialize PhoneService
 
   List<IncidenceData> _allFetchedIncidents = [];
   List<IncidenceData> _displayedIncidents = [];
@@ -41,7 +40,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
   bool _isLoadingInitialData = true;
   String _error = '';
 
-  // NEW: State variable for the header text
   late String _headerLocationText;
 
   StreamSubscription<Position>? _positionStreamSubscription;
@@ -50,9 +48,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
 
-  // Fake loading state for donation
   bool _isFakeDonationProcessing = false;
-
   final TextEditingController _donationAmountController =
       TextEditingController();
 
@@ -63,10 +59,8 @@ class _IncidentScreenState extends State<IncidentScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize header with passed text or default, so it's instant
     _headerLocationText = widget.currentLocationText ?? "Nearby Area";
 
-    // No need to load Google Pay config for testing
     _searchController.addListener(() {
       if (mounted) {
         setState(() {
@@ -103,7 +97,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
       if (!mounted) return;
       if (locationResult.success && locationResult.data != null) {
         _currentPosition = locationResult.data;
-        // NEW: Fetch readable address immediately when position is found
         _updateHeaderAddress(_currentPosition!);
       } else {
         _currentPosition = null;
@@ -117,10 +110,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
     }
   }
 
-  // NEW: Helper to fetch address text (City, District)
   Future<void> _updateHeaderAddress(Position position) async {
-    // If we already have a passed text and haven't moved far, we could skip this.
-    // But fetching ensures it's accurate to the exact coordinates.
     try {
       final addressResult = await _locationService.getAddressFromCoordinates(
           position.latitude, position.longitude);
@@ -154,7 +144,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
       case MakerType.pet:
         return ['vet'];
       case MakerType.emergency:
-        // Excluded 'vet' terms here, but we also check explicitly below
         return ['hosp', 'clin', 'med', 'emerg', 'salud', 'health'];
       case MakerType.fire:
         return ['bomb', 'fire', 'estaci'];
@@ -213,6 +202,8 @@ class _IncidentScreenState extends State<IncidentScreen> {
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           backgroundColor: const Color(0xFF011935),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20.0),
             side: BorderSide(color: accentColor, width: 2),
@@ -223,7 +214,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
             textAlign: TextAlign.center,
           ),
           content: SizedBox(
-            width: double.maxFinite,
+            width: MediaQuery.of(context).size.width,
             child: ListView.builder(
               shrinkWrap: true,
               itemCount: places.length,
@@ -243,6 +234,18 @@ class _IncidentScreenState extends State<IncidentScreen> {
                             style: const TextStyle(color: Colors.white70),
                           )
                         : null,
+                    // UPDATED: Functional Phone Button
+                    trailing: IconButton(
+                      icon: const Icon(Icons.phone, color: Colors.white),
+                      onPressed: () {
+                        // Use the phone number from the incident data
+                        final phone = place.phoneNumber ?? '';
+                        _phoneService.makePhoneCall(
+                          phoneNumber: phone,
+                          context: context,
+                        );
+                      },
+                    ),
                     onTap: () {
                       Navigator.of(dialogContext).pop(false);
                       _navigateToIncidentMap(place);
@@ -320,8 +323,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
 
           _currentPosition = newPosition;
 
-          // NEW: Update address text if user moved significantly (e.g. > 100m)
-          // Using a slightly larger threshold for address text to avoid flickering
           if (_currentPosition != null &&
               Geolocator.distanceBetween(
                     _currentPosition!.latitude,
@@ -349,7 +350,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
     );
   }
 
-  // Helper to remove accents for better matching (e.g., 'grúa' -> 'grua')
   String _removeDiacritics(String str) {
     return str
         .replaceAll(RegExp(r'[áÁ]'), 'a')
@@ -395,7 +395,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
       });
     }
 
-    // UPDATED: Include Event in the 24-hour expiry check along with Pet
     if (widget.incidentType == MakerType.pet ||
         widget.incidentType == MakerType.event) {
       final now = DateTime.now();
@@ -404,7 +403,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
         return incident.timestamp.toDate().isBefore(twentyFourHoursAgo);
       });
     } else if (widget.incidentType != MakerType.place) {
-      // Standard 3-hour expiry for other types, skipping Places
       final now = DateTime.now();
       final threeHoursAgo = now.subtract(const Duration(hours: 3));
       filteredIncidents.removeWhere((incident) {
@@ -506,7 +504,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
-        // Using StatefulBuilder to manage loading state inside the dialog
         return StatefulBuilder(
           builder: (context, setStateModal) {
             return AlertDialog(
@@ -558,8 +555,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // --- FAKE GOOGLE PAY BUTTON (White) ---
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -567,17 +562,12 @@ class _IncidentScreenState extends State<IncidentScreen> {
                           onPressed: _isFakeDonationProcessing
                               ? null
                               : () async {
-                                  // 1. Show loading spinner
                                   setStateModal(
                                       () => _isFakeDonationProcessing = true);
-
-                                  // 2. Simulate network delay (1.5 seconds)
                                   await Future.delayed(
                                       const Duration(milliseconds: 1500));
-
-                                  // 3. Success Logic
                                   if (context.mounted) {
-                                    Navigator.pop(dialogContext); // Close Modal
+                                    Navigator.pop(dialogContext);
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                           content: Text(localizations
@@ -585,13 +575,11 @@ class _IncidentScreenState extends State<IncidentScreen> {
                                     );
                                     _donationAmountController.clear();
                                   }
-
-                                  // Reset state
                                   _isFakeDonationProcessing = false;
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white, // White background
-                            foregroundColor: Colors.grey[200], // Ripple
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.grey[200],
                             elevation: 2,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(24),
@@ -602,7 +590,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
                               ? const SizedBox(
                                   width: 20,
                                   height: 20,
-                                  // Black spinner on white bg
                                   child: CircularProgressIndicator(
                                       color: Colors.black, strokeWidth: 2))
                               : Row(
@@ -616,7 +603,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
                                     const SizedBox(width: 8),
                                     const Text("Pay",
                                         style: TextStyle(
-                                            color: Colors.black, // Black Text
+                                            color: Colors.black,
                                             fontWeight: FontWeight.w500,
                                             fontSize: 18)),
                                   ],
@@ -642,7 +629,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
         );
       },
     );
-    // Reset flag just in case
     _isFakeDonationProcessing = false;
   }
 
@@ -662,11 +648,9 @@ class _IncidentScreenState extends State<IncidentScreen> {
           final nearbyPlaces = _allFetchedIncidents.where((incident) {
             if (incident.type != MakerType.place) return false;
 
-            // UPDATED: Accent-proof check using _removeDiacritics
             final String normalizedDesc =
                 _removeDiacritics(incident.description.toLowerCase());
 
-            // 1. Must match at least one positive term (e.g. 'hospital')
             final bool matchesPositive = searchTerms.any((term) {
               final String normalizedTerm =
                   _removeDiacritics(term.toLowerCase());
@@ -675,8 +659,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
 
             if (!matchesPositive) return false;
 
-            // 2. Specific exclusion: If Emergency, exclude 'vet'
-            //    This ensures "Clinica Veterinaria" doesn't show up for "Clinica" search
             if (widget.incidentType == MakerType.emergency) {
               if (normalizedDesc.contains('vet') ||
                   normalizedDesc.contains('veterin')) {
@@ -729,7 +711,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
                       (Route<dynamic> route) => false);
                 },
                 isLongPressEnabled: false,
-                // UPDATED: Now uses dynamic location text
                 locationText: _headerLocationText,
               ),
               Padding(
@@ -873,6 +854,8 @@ class _IncidentScreenState extends State<IncidentScreen> {
           distance: incident.distance,
           onTap: () => _navigateToIncidentMap(incident),
           localizations: localizations,
+          // UPDATED: Pass the phone service
+          phoneService: _phoneService,
         );
       },
     );

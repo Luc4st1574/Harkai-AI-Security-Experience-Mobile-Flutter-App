@@ -42,6 +42,8 @@ class IncidenceData {
     this.distance,
   });
 
+  String? get phoneNumber => contactInfo;
+
   factory IncidenceData.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
@@ -159,20 +161,15 @@ class FirestoreService {
   FirestoreService();
 
   /// Ensures the incident types collection exists.
-  /// UPDATED: Checks if data exists first to avoid overwriting or recreation loops.
   Future<void> ensureIncidentTypesCollectionExists() async {
     try {
-      // 1. Check if the collection is already populated.
-      // We limit to 1 because we only need to know if ANY document exists.
       final QuerySnapshot snapshot =
           await _incidentTypesCollection.limit(1).get();
 
-      // 2. If it's not empty, we assume it's initialized and exit immediately.
       if (snapshot.docs.isNotEmpty) {
         return;
       }
 
-      // 3. Only proceed to create types if the collection is truly empty.
       for (var type in MakerType.values) {
         final String docId = type.index.toString();
         await _incidentTypesCollection.doc(docId).set({
