@@ -181,7 +181,8 @@ class FirestoreService {
     }
   }
 
-  Future<bool> addIncidence({
+  // --- MODIFICADO: Devuelve String? (ID) en lugar de bool ---
+  Future<String?> addIncidence({
     required MakerType type,
     required double latitude,
     required double longitude,
@@ -192,14 +193,13 @@ class FirestoreService {
     String? city,
     String? country,
   }) async {
-    if (type == MakerType.none) return false;
+    if (type == MakerType.none) return null;
 
     final User? currentUser = _firebaseAuth.currentUser;
-    if (currentUser == null) return false;
+    if (currentUser == null) return null;
 
     try {
-      // 1. Cooldown Check: Ensure 1 hour has passed since the last report of THIS type.
-      // EXCEPTION: Events and Places are paid items, so they don't have this restriction.
+      // 1. Cooldown Check
       if (type != MakerType.event && type != MakerType.place) {
         final QuerySnapshot lastIncidentSnapshot = await _heatPointsCollection
             .where('userId', isEqualTo: currentUser.uid)
@@ -222,18 +222,18 @@ class FirestoreService {
             if (difference.inHours < 1) {
               debugPrint(
                   'Cooldown active for ${type.name}. Time passed: ${difference.inMinutes} minutes. Must wait 60 minutes.');
-              return false; // Prevent adding the incident
+              return null; // Retorna null si hay cooldown
             }
           }
         }
       }
 
-      await _heatPointsCollection.add({
+      // Guardamos la referencia para obtener el ID
+      DocumentReference docRef = await _heatPointsCollection.add({
         'userId': currentUser.uid,
         'latitude': latitude,
         'longitude': longitude,
-        'type': type
-            .index, // Usa el índice del Enum, correcto si se usa Consistentemente
+        'type': type.index,
         'description': description ?? '',
         'imageUrl': imageUrl,
         'timestamp': FieldValue.serverTimestamp(),
@@ -243,14 +243,14 @@ class FirestoreService {
         'city': city,
         'country': country,
       });
-      return true;
+
+      // Devolvemos el ID del documento creado
+      return docRef.id;
     } catch (e) {
       debugPrint('Error adding incidence: $e');
-      return false;
+      return null;
     }
   }
-
-  // ... (El resto de métodos Stream y Consultas son iguales) ...
 
   Stream<List<IncidenceData>> getIncidencesStream() {
     return _heatPointsCollection

@@ -122,6 +122,8 @@ class _PetsScreenState extends State<PetsScreen> {
                       IncidentImageDisplayModal(incidence: tappedIncidence),
                 );
               },
+              // ✅ FIX: Pasar el icono de mascota cargado por MarkerManager
+              petIcon: _markerManager.petMarkerIcon,
             ))
         .toSet();
 

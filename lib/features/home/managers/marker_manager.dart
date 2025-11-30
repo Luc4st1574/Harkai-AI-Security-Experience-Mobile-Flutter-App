@@ -7,6 +7,8 @@ import 'package:harkai/core/managers/download_data_manager.dart';
 import '../utils/incidences.dart';
 import '../utils/markers.dart';
 import '../modals/incident_description.dart';
+// IMPORT DEL NUEVO MODAL DE COMPARTIR
+import '../modals/share_incident_modal.dart';
 import 'package:harkai/l10n/app_localizations.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -107,7 +109,9 @@ class MarkerManager {
     String? country,
   }) async {
     final localizations = AppLocalizations.of(context)!;
-    final success = await _firestoreService.addIncidence(
+
+    // --- CAMBIO: Ahora obtenemos el ID (String?) ---
+    final String? newIncidentId = await _firestoreService.addIncidence(
       type: makerType,
       latitude: latitude,
       longitude: longitude,
@@ -118,6 +122,8 @@ class MarkerManager {
       city: city,
       country: country,
     );
+
+    final bool success = newIncidentId != null;
 
     if (context.mounted) {
       final markerInfo = getMarkerInfo(makerType, localizations);
@@ -134,6 +140,10 @@ class MarkerManager {
 
       if (success) {
         await _downloadDataManager.checkForNewIncidents();
+
+        // --- CAMBIO: Mostrar el modal de compartir usando el ID ---
+        await showShareIncidentDialog(
+            context: context, incidentId: newIncidentId);
       }
     }
   }
@@ -168,19 +178,17 @@ class MarkerManager {
         final String? imageUrl = result['imageUrl'];
         final String? contactInfo = result['contactInfo'];
 
-        // --- CORRECCIÓN: Usar el tipo devuelto por el modal si existe ---
         MakerType typeToSave = _selectedIncident;
         if (result.containsKey('finalMarkerType') &&
             result['finalMarkerType'] is MakerType) {
           typeToSave = result['finalMarkerType'];
         }
-        // ----------------------------------------------------------------
 
         if (description != null || imageUrl != null) {
           if (context.mounted) {
             await addMarkerAndShowNotification(
               context: context,
-              makerType: typeToSave, // Usamos la variable local corregida
+              makerType: typeToSave,
               latitude: targetLatitude,
               longitude: targetLongitude,
               description: description,
@@ -232,8 +240,6 @@ class MarkerManager {
         final String? description = result['description'];
         final String? imageUrl = result['imageUrl'];
 
-        // Para emergencias, también podríamos verificar si hubo cambio,
-        // aunque es menos común cambiar desde emergencia a otra cosa.
         MakerType typeToSave = MakerType.emergency;
         if (result.containsKey('finalMarkerType') &&
             result['finalMarkerType'] is MakerType) {
