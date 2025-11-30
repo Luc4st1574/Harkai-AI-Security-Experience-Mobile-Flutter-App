@@ -441,7 +441,7 @@ class _HomeState extends State<Home> {
             child: DraggableScrollableSheet(
               initialChildSize: 0.10,
               minChildSize: 0.10,
-              maxChildSize: 0.5,
+              maxChildSize: 0.6,
               expand: false,
               snap: true,
               builder:
