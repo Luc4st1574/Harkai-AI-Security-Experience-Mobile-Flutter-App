@@ -20,9 +20,9 @@ class IncidenceData {
   final Timestamp timestamp;
   final bool isVisible;
   final String? contactInfo;
-  final String? district; // NEW
-  final String? city; // NEW
-  final String? country; // NEW
+  final String? district;
+  final String? city;
+  final String? country;
   double? distance;
 
   IncidenceData({
@@ -68,9 +68,9 @@ class IncidenceData {
       timestamp: data['timestamp'] as Timestamp? ?? Timestamp.now(),
       isVisible: data['isVisible'] as bool? ?? true,
       contactInfo: data['contactInfo'] as String?,
-      district: data['district'] as String?, // NEW
-      city: data['city'] as String?, // NEW
-      country: data['country'] as String?, // NEW
+      district: data['district'] as String?,
+      city: data['city'] as String?,
+      country: data['country'] as String?,
     );
   }
 
@@ -80,7 +80,6 @@ class IncidenceData {
   }
 }
 
-// ... createMarkerFromIncidence and createCircleFromIncidence remain unchanged ...
 Marker createMarkerFromIncidence(
   IncidenceData incidence,
   AppLocalizations localizations, {
@@ -159,8 +158,21 @@ class FirestoreService {
 
   FirestoreService();
 
+  /// Ensures the incident types collection exists.
+  /// UPDATED: Checks if data exists first to avoid overwriting or recreation loops.
   Future<void> ensureIncidentTypesCollectionExists() async {
     try {
+      // 1. Check if the collection is already populated.
+      // We limit to 1 because we only need to know if ANY document exists.
+      final QuerySnapshot snapshot =
+          await _incidentTypesCollection.limit(1).get();
+
+      // 2. If it's not empty, we assume it's initialized and exit immediately.
+      if (snapshot.docs.isNotEmpty) {
+        return;
+      }
+
+      // 3. Only proceed to create types if the collection is truly empty.
       for (var type in MakerType.values) {
         final String docId = type.index.toString();
         await _incidentTypesCollection.doc(docId).set({
@@ -180,9 +192,9 @@ class FirestoreService {
     String? description,
     String? imageUrl,
     String? contactInfo,
-    String? district, // NEW
-    String? city, // NEW
-    String? country, // NEW
+    String? district,
+    String? city,
+    String? country,
   }) async {
     if (type == MakerType.none) {
       return false;
@@ -202,9 +214,9 @@ class FirestoreService {
         'timestamp': FieldValue.serverTimestamp(),
         'isVisible': true,
         'contactInfo': contactInfo,
-        'district': district, // Save
-        'city': city, // Save
-        'country': country, // Save
+        'district': district,
+        'city': city,
+        'country': country,
       });
       return true;
     } catch (e) {
@@ -234,10 +246,6 @@ class FirestoreService {
       return <IncidenceData>[];
     });
   }
-
-  // ... (getIncidencesStreamByType, getIncidentsVisibility, markExpiredIncidencesAsInvisible, getEmergencyNumbersForCity) ...
-  // Keep the rest of the methods exactly as they were in the previous file content
-  // to avoid truncation issues in this response.
 
   Stream<List<IncidenceData>> getIncidencesStreamByType(MakerType type) {
     if (type == MakerType.none) {

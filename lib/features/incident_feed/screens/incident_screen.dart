@@ -8,7 +8,7 @@ import 'package:harkai/features/home/widgets/header.dart';
 import 'package:harkai/core/services/location_service.dart';
 import 'package:harkai/features/home/screens/home.dart';
 import 'package:harkai/l10n/app_localizations.dart';
-import 'package:pay/pay.dart';
+// import 'package:pay/pay.dart'; // Commented out for fake button
 import '../widgets/incident_tile.dart';
 import '../widgets/map_view.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
@@ -43,7 +43,9 @@ class _IncidentScreenState extends State<IncidentScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
 
-  late final Future<PaymentConfiguration> _googlePayConfigFuture;
+  // Fake loading state for donation
+  bool _isFakeDonationProcessing = false;
+
   final TextEditingController _donationAmountController =
       TextEditingController();
 
@@ -54,7 +56,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
   @override
   void initState() {
     super.initState();
-    _googlePayConfigFuture = PaymentConfiguration.fromAsset('google_pay.json');
+    // No need to load Google Pay config for testing
     _searchController.addListener(() {
       if (mounted) {
         setState(() {
@@ -117,7 +119,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
 
   // --- Helper Methods for "On Pop" Modal Logic ---
 
-  /// Returns the list of keywords/prefixes to filter "Places" based on the incident type.
   List<String> _getSearchTerms(MakerType type) {
     switch (type) {
       case MakerType.pet:
@@ -126,7 +127,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
         return ['hosp', 'clin', 'med', 'emerg', 'salud', 'health'];
       case MakerType.fire:
         return ['bomb', 'fire', 'estaci'];
-      case MakerType.crash: // Assuming MakerType.crash exists or similar
+      case MakerType.crash:
         return ['mec', 'tall', 'tow', 'grua', 'auto', 'carr'];
       case MakerType.theft:
         return ['comis', 'polic', 'estac'];
@@ -135,7 +136,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
     }
   }
 
-  /// Returns the localized title for the modal.
   String _getModalTitle(MakerType type) {
     final isSpanish = localizations.localeName == 'es';
     switch (type) {
@@ -154,7 +154,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
     }
   }
 
-  /// Returns the icon for the modal header.
   IconData _getModalIcon(MakerType type) {
     switch (type) {
       case MakerType.pet:
@@ -172,7 +171,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
     }
   }
 
-  /// Displays a modal with a list of relevant places (Vets, Hospitals, etc.).
   Future<bool?> _showNearbyPlacesModal(
       List<IncidenceData> places, String title) async {
     final markerInfo = getMarkerInfo(widget.incidentType, localizations);
@@ -215,9 +213,8 @@ class _IncidentScreenState extends State<IncidentScreen> {
                           )
                         : null,
                     onTap: () {
-                      Navigator.of(dialogContext)
-                          .pop(false); // Close this modal
-                      _navigateToIncidentMap(place); // Show place on the map
+                      Navigator.of(dialogContext).pop(false);
+                      _navigateToIncidentMap(place);
                     },
                   ),
                 );
@@ -252,18 +249,14 @@ class _IncidentScreenState extends State<IncidentScreen> {
       });
     }
 
-    // UPDATED: Fetch ALL incidents regardless of type.
-    // This allows us to have 'MakerType.place' data available in memory
-    // to filter for Vets/Hospitals/etc. when the user tries to exit the screen.
     Stream<List<IncidenceData>> incidentsStream =
         _firestoreService.getIncidencesStream();
 
     _incidentsStreamSubscription = incidentsStream.listen(
       (incidents) {
         if (!mounted) return;
-        _allFetchedIncidents = incidents; // Holds raw data (including places)
-        _processIncidentsUpdate(
-            _allFetchedIncidents); // Processes specific type for display
+        _allFetchedIncidents = incidents;
+        _processIncidentsUpdate(_allFetchedIncidents);
         setState(() {
           _isLoadingInitialData = false;
         });
@@ -314,12 +307,10 @@ class _IncidentScreenState extends State<IncidentScreen> {
   void _processIncidentsUpdate(List<IncidenceData> allIncidents) {
     if (!mounted) return;
 
-    // Filter for the specific type (e.g., Pet, Fire, Theft) to display in the list
     List<IncidenceData> filteredIncidents = allIncidents
         .where((incident) => incident.type == widget.incidentType)
         .toList();
 
-    // Apply distance, search, and expiry filters
     if (_currentPosition != null) {
       filteredIncidents.removeWhere((incident) {
         final distance = Geolocator.distanceBetween(
@@ -362,7 +353,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
           .compareTo(b.distance ?? double.maxFinite));
     }
 
-    // Optimization: Check if list actually changed before setState
     bool listChanged = true;
     if (_displayedIncidents.length == filteredIncidents.length) {
       listChanged = false;
@@ -450,116 +440,146 @@ class _IncidentScreenState extends State<IncidentScreen> {
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF011935),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20.0),
-            side: BorderSide(color: accentColor, width: 2),
-          ),
-          title: Text(
-            localizations.donationDialogTitle,
-            style: TextStyle(color: accentColor, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          content: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: _donationAmountController,
-            builder: (context, value, child) {
-              final amount =
-                  value.text.trim().isEmpty ? "0.00" : value.text.trim();
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    localizations.donationDialogContent(amount),
-                    style: const TextStyle(color: Colors.white70),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _donationAmountController,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: localizations.donationAmountHint,
-                      hintStyle:
-                          TextStyle(color: Colors.white.withOpacity(0.7)),
-                      prefixIcon: Icon(Icons.attach_money, color: accentColor),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30.0),
-                        borderSide:
-                            BorderSide(color: accentColor.withOpacity(0.5)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30.0),
-                        borderSide: BorderSide(color: accentColor),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  FutureBuilder<PaymentConfiguration>(
-                    future: _googlePayConfigFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.done) {
-                        if (snapshot.hasData) {
-                          return GooglePayButton(
-                            paymentConfiguration: snapshot.data!,
-                            paymentItems: [
-                              PaymentItem(
-                                label: localizations.donationLabel,
-                                amount: amount,
-                                status: PaymentItemStatus.final_price,
-                              )
-                            ],
-                            onPaymentResult: (Map<String, dynamic> result) {
-                              Navigator.pop(dialogContext);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        localizations.donationSuccessMessage)),
-                              );
-                              _donationAmountController.clear();
-                            },
-                            loadingIndicator: const Center(
-                                child: CircularProgressIndicator()),
-                            onError: (error) {
-                              debugPrint("Google Pay Error: $error");
-                              Navigator.pop(dialogContext);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        localizations.donationFailedMessage)),
-                              );
-                            },
-                            type: GooglePayButtonType.donate,
-                            theme: GooglePayButtonTheme.dark,
-                            width: double.infinity,
-                          );
-                        } else {
-                          return Text("Error loading payment configuration.",
-                              style: TextStyle(color: Colors.red));
-                        }
-                      }
-                      return const Center(child: CircularProgressIndicator());
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(
-                localizations.incidentImageModalCloseButton,
-                style: TextStyle(color: accentColor),
+        // Using StatefulBuilder to manage loading state inside the dialog
+        return StatefulBuilder(
+          builder: (context, setStateModal) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF011935),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20.0),
+                side: BorderSide(color: accentColor, width: 2),
               ),
-            )
-          ],
+              title: Text(
+                localizations.donationDialogTitle,
+                style:
+                    TextStyle(color: accentColor, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              content: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _donationAmountController,
+                builder: (context, value, child) {
+                  final amount =
+                      value.text.trim().isEmpty ? "0.00" : value.text.trim();
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        localizations.donationDialogContent(amount),
+                        style: const TextStyle(color: Colors.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _donationAmountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: localizations.donationAmountHint,
+                          hintStyle:
+                              TextStyle(color: Colors.white.withOpacity(0.7)),
+                          prefixIcon:
+                              Icon(Icons.attach_money, color: accentColor),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide:
+                                BorderSide(color: accentColor.withOpacity(0.5)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(30.0),
+                            borderSide: BorderSide(color: accentColor),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // --- FAKE GOOGLE PAY BUTTON (White) ---
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _isFakeDonationProcessing
+                              ? null
+                              : () async {
+                                  // 1. Show loading spinner
+                                  setStateModal(
+                                      () => _isFakeDonationProcessing = true);
+
+                                  // 2. Simulate network delay (1.5 seconds)
+                                  await Future.delayed(
+                                      const Duration(milliseconds: 1500));
+
+                                  // 3. Success Logic
+                                  if (context.mounted) {
+                                    Navigator.pop(dialogContext); // Close Modal
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(localizations
+                                              .donationSuccessMessage)),
+                                    );
+                                    _donationAmountController.clear();
+                                  }
+
+                                  // Reset state
+                                  _isFakeDonationProcessing = false;
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white, // White background
+                            foregroundColor: Colors.grey[200], // Ripple
+                            elevation: 2,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: _isFakeDonationProcessing
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  // Black spinner on white bg
+                                  child: CircularProgressIndicator(
+                                      color: Colors.black, strokeWidth: 2))
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'assets/images/google_logo.png',
+                                      height: 24,
+                                      width: 24,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text("Pay",
+                                        style: TextStyle(
+                                            color: Colors.black, // Black Text
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 18)),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              actions: [
+                if (!_isFakeDonationProcessing)
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: Text(
+                      localizations.incidentImageModalCloseButton,
+                      style: TextStyle(color: accentColor),
+                    ),
+                  )
+              ],
+            );
+          },
         );
       },
     );
+    // Reset flag just in case
+    _isFakeDonationProcessing = false;
   }
 
   @override
@@ -572,21 +592,15 @@ class _IncidentScreenState extends State<IncidentScreen> {
       onPopInvoked: (didPop) async {
         if (didPop) return;
 
-        // 1. Get search terms for the current incident type (e.g. ['vet'], ['hosp', 'clin'])
         final List<String> searchTerms = _getSearchTerms(widget.incidentType);
 
         if (searchTerms.isNotEmpty) {
-          // 2. Filter 'places' from all fetched incidents that match these terms
           final nearbyPlaces = _allFetchedIncidents.where((incident) {
-            // Ensure we are only looking at "Places", not other alerts
             if (incident.type != MakerType.place) return false;
-
             final desc = incident.description.toLowerCase();
-            // Check if any of the search terms is contained in the description
             return searchTerms.any((term) => desc.contains(term));
           }).toList();
 
-          // 3. Calculate distance and sort if user location is available
           if (_currentPosition != null) {
             for (var place in nearbyPlaces) {
               place.distance = Geolocator.distanceBetween(
@@ -599,13 +613,11 @@ class _IncidentScreenState extends State<IncidentScreen> {
                 .compareTo(b.distance ?? double.maxFinite));
           }
 
-          // 4. If no places found, just pop
           if (nearbyPlaces.isEmpty) {
             if (mounted) Navigator.of(context).pop();
             return;
           }
 
-          // 5. Show the modal with the found places
           final bool? shouldPop = await _showNearbyPlacesModal(
             nearbyPlaces,
             _getModalTitle(widget.incidentType),
@@ -615,7 +627,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
             Navigator.of(context).pop();
           }
         } else {
-          // For incident types without related places (or empty list), just pop
           if (mounted) Navigator.of(context).pop();
         }
       },

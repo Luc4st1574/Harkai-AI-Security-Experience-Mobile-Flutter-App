@@ -50,7 +50,7 @@ class IncidentMediaServices {
         "On the crash incident type, this includes all kinds of car accidents, motorcycle accidents, and pedestrian accidents. "
         "On the fire incident type, this includes all kinds of fires, explosions, or smoke. "
         "On the emergency incident type, this includes all kinds of emergencies, like medical emergencies, natural disasters, or other urgent situations, lesions and all related this is a incident type that must be open to a lot of posible thing so be conscius of all kind of possible emergencies. "
-        "On the places incident type, this is for addding businesses, stores,parks,plazas,malls and so on to the map, this is not for incidents but for adding places to the map so be conscious of this and do not use it for incidents, here just add what the user tells you do not try to give it more context or description cause it will look weird, just repeat what the user says on this kind incident do not add anything else. "
+        "On the places incident type, this is for addding businesses, stores,parks,plazas,malls and so on to the map, this is not for incidents but for adding places to the map so be conscious of this and do not use it for incidents, here just add what the user tells you do not try to give it more context or description cause it will look weird, just repeat what the user says on this kind incident do not add anything else, IMAGES like logos are acepeted too. "
         "On the event incident type, this includes community gatherings, parties, concerts, protests, cultural events, sports matches, or any public or private scheduled activity. This is for reporting social things happening now or planned. ";
 
     // UPDATED SPANISH LOGIC

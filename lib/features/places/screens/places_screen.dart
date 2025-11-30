@@ -1,23 +1,22 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:harkai/core/managers/download_data_manager.dart';
 import 'package:harkai/l10n/app_localizations.dart';
-import 'package:pay/pay.dart';
+// import 'package:pay/pay.dart'; // Commented out for now
 
 // Services
 import 'package:harkai/core/services/location_service.dart';
 import 'package:harkai/core/services/phone_service.dart';
 
-// Utils & Managers (from home feature)
+// Utils & Managers
 import 'package:harkai/features/home/utils/incidences.dart';
 import 'package:harkai/features/home/utils/markers.dart';
 import 'package:harkai/features/home/managers/marker_manager.dart';
 import 'package:harkai/features/home/managers/map_location_manager.dart';
 import 'package:harkai/features/home/managers/user_session_manager.dart';
 
-// Widgets (from home feature)
+// Widgets
 import 'package:harkai/features/home/widgets/header.dart';
 import 'package:harkai/features/home/widgets/map.dart';
 
@@ -49,12 +48,16 @@ class _PlacesScreenState extends State<PlacesScreen> {
 
   bool _isAddingPlace = false;
 
-  late final Future<PaymentConfiguration> _googlePayConfigFuture;
+  // Performance optimization flag
+  bool _isMapUpdating = false;
+
+  // Fake loading state for the button
+  bool _isFakeProcessing = false;
 
   @override
   void initState() {
     super.initState();
-    _googlePayConfigFuture = PaymentConfiguration.fromAsset('google_pay.json');
+    // No need to load Google Pay config for testing
   }
 
   @override
@@ -62,6 +65,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
     super.didChangeDependencies();
     if (_localizations == null) {
       _localizations = AppLocalizations.of(context)!;
+
       _userSessionManager = UserSessionManager(
         firebaseAuthInstance: _firebaseAuth,
         phoneService: PhoneService(),
@@ -69,10 +73,15 @@ class _PlacesScreenState extends State<PlacesScreen> {
           if (mounted) setState(() => _currentUser = user);
         },
       );
+
       _mapLocationManager = MapLocationManager(
         locationService: _locationService,
-        onStateChange: () {
+        onStateChange: () async {
+          if (!mounted || _isMapUpdating) return;
+          _isMapUpdating = true;
+          await Future.delayed(const Duration(milliseconds: 32));
           if (mounted) setState(() {});
+          _isMapUpdating = false;
         },
         getMapController: () => _mapController,
         setMapController: (controller) {
@@ -81,6 +90,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
           }
         },
       );
+
       _markerManager = MarkerManager(
         firestoreService: _firestoreService,
         onStateChange: () {
@@ -88,6 +98,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
         },
         downloadDataManager: _downloadDataManager,
       );
+
       _initializeScreenData();
     }
   }
@@ -128,6 +139,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
     final targetLat = _mapLocationManager.targetLatitude;
     final targetLng = _mapLocationManager.targetLongitude;
     final targetPin = _mapLocationManager.targetPinDot;
+
     if (targetLat != null && targetLng != null && targetPin != null) {
       displayMarkers.add(
         Marker(
@@ -166,82 +178,112 @@ class _PlacesScreenState extends State<PlacesScreen> {
     if (!mounted) return;
     setState(() => _isAddingPlace = true);
 
-    final paymentItems = [
-      PaymentItem(
-        label: _localizations!.addplaceTitle,
-        amount: '8.00',
-        status: PaymentItemStatus.final_price,
-      )
-    ];
-
+    // --- FAKE PAYMENT DIALOG ---
     final paymentResult = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF001F3F),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20.0),
-          side: BorderSide(color: Colors.yellow.shade700, width: 2),
-        ),
-        title: Text(
-          _localizations!.paymentRequiredMessage('8.00'),
-          style: TextStyle(
-            color: Colors.yellow.shade700,
-            fontWeight: FontWeight.bold,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _localizations!.addplaceInfo,
+      barrierDismissible: false,
+      builder: (context) {
+        // Local state for the dialog to show loading spinner
+        return StatefulBuilder(builder: (context, setStateDialog) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF001F3F),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20.0),
+              side: BorderSide(color: Colors.yellow.shade700, width: 2),
+            ),
+            title: Text(
+              _localizations!.paymentRequiredMessage('8.00'),
+              style: TextStyle(
+                color: Colors.yellow.shade700,
+                fontWeight: FontWeight.bold,
+              ),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70),
             ),
-            const SizedBox(height: 25),
-            FutureBuilder<PaymentConfiguration>(
-              future: _googlePayConfigFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  if (snapshot.hasData) {
-                    return SizedBox(
-                      width: double.infinity,
-                      child: GooglePayButton(
-                        paymentConfiguration: snapshot.data!,
-                        paymentItems: paymentItems,
-                        type: GooglePayButtonType.plain,
-                        theme: GooglePayButtonTheme.light,
-                        onPaymentResult: (Map<String, dynamic> result) {
-                          Navigator.pop(context, true);
-                        },
-                        loadingIndicator:
-                            const Center(child: CircularProgressIndicator()),
-                        onError: (error) {
-                          debugPrint("Google Pay Error: $error");
-                          Navigator.pop(context, false);
-                        },
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _localizations!.addplaceInfo,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 25),
+
+                // FAKE GOOGLE PAY BUTTON - WHITE STYLE
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isFakeProcessing
+                        ? null
+                        : () async {
+                            // 1. Show loading in button
+                            setStateDialog(() => _isFakeProcessing = true);
+
+                            // 2. Mimic network delay (1.5 seconds)
+                            await Future.delayed(
+                                const Duration(milliseconds: 1500));
+
+                            // 3. Close dialog with success (true)
+                            if (context.mounted) {
+                              Navigator.pop(context, true);
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white, // White Background
+                      foregroundColor: Colors.grey[200], // Ripple color
+                      elevation: 2, // Slight shadow
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
                       ),
-                    );
-                  } else {
-                    return const Text("Error loading payment configuration.");
-                  }
-                }
-                return const Center(child: CircularProgressIndicator());
-              },
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: _isFakeProcessing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            // Black spinner for white background
+                            child: CircularProgressIndicator(
+                                color: Colors.black, strokeWidth: 2))
+                        : Row(
+                            mainAxisAlignment:
+                                MainAxisAlignment.center, // Center Content
+                            children: [
+                              // Your Logo Asset
+                              Image.asset(
+                                'assets/images/google_logo.png',
+                                height: 24,
+                                width: 24,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text("Pay",
+                                  style: TextStyle(
+                                      color: Colors.black, // Black Text
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 18)),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              "Cancel",
-              style: TextStyle(color: Colors.yellow.shade700),
-            ),
-          )
-        ],
-      ),
+            actions: [
+              if (!_isFakeProcessing)
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(
+                    "Cancel",
+                    style: TextStyle(color: Colors.yellow.shade700),
+                  ),
+                )
+            ],
+          );
+        });
+      },
     );
+
+    // Reset processing flag for next time
+    _isFakeProcessing = false;
 
     if (paymentResult == true) {
       if (!mounted) {
@@ -251,6 +293,8 @@ class _PlacesScreenState extends State<PlacesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_localizations!.paymentSuccessfulMessage)),
       );
+
+      // Proceed to the normal logic
       final result = await showIncidentVoiceDescriptionDialog(
         context: context,
         markerType: MakerType.place,
@@ -325,7 +369,6 @@ class _PlacesScreenState extends State<PlacesScreen> {
                     (Route<dynamic> route) => false);
               },
               isLongPressEnabled: true,
-              // MODIFIED: Pass the localized location text from the manager
               locationText:
                   _mapLocationManager.getLocalizedLocationText(_localizations!),
             ),
