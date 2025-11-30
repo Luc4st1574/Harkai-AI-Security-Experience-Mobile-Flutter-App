@@ -25,7 +25,8 @@ class _OnboardingTutorialState extends State<OnboardingTutorial> {
       _buildTutorialPage(
         imagePath: 'assets/images/incident_buttons.jpg',
         title: localizations.onboardingIncidentsTitle,
-        description: localizations.onboardingIncidentsDescription,
+        description:
+            "Los botones de alertas tienen muchas funcionalidades, un click para reportar y un click largo para más opciones.",
       ),
       _buildTutorialPage(
         imagePath: 'assets/images/tap_position_marker.png',
@@ -34,7 +35,8 @@ class _OnboardingTutorialState extends State<OnboardingTutorial> {
       ),
       // New page for location permission
       _buildTutorialPage(
-        imagePath: 'assets/images/alert.png', // Using the alert icon for emphasis
+        imagePath:
+            'assets/images/alert.png', // Using the alert icon for emphasis
         title: localizations.onboardingLocationTitle,
         description: localizations.onboardingLocationDescription,
       ),
@@ -94,7 +96,8 @@ class _OnboardingTutorialState extends State<OnboardingTutorial> {
                   _currentPage == tutorialPages.length - 1
                       ? localizations.onboardingGotIt
                       : localizations.onboardingNext,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -111,7 +114,9 @@ class _OnboardingTutorialState extends State<OnboardingTutorial> {
       height: 8.0,
       width: _currentPage == index ? 24.0 : 8.0,
       decoration: BoxDecoration(
-        color: _currentPage == index ? const Color(0xFF001F3F) : Colors.grey.shade400,
+        color: _currentPage == index
+            ? const Color(0xFF001F3F)
+            : Colors.grey.shade400,
         borderRadius: BorderRadius.circular(4.0),
       ),
     );
@@ -132,13 +137,17 @@ class _OnboardingTutorialState extends State<OnboardingTutorial> {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+            style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87),
           ),
           const SizedBox(height: 15),
           Text(
             description,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, height: 1.4, color: Colors.black54),
+            style: const TextStyle(
+                fontSize: 16, height: 1.4, color: Colors.black54),
           ),
         ],
       ),
