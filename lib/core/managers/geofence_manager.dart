@@ -19,6 +19,9 @@ class GeofenceManager {
   List<GeofenceModel> _incidents = [];
   final Set<String> _activeGeofences = {};
 
+  // NEW: Store the last known position to allow immediate checks when data arrives
+  Position? _lastKnownPosition;
+
   GeofenceManager(this._downloadDataManager,
       {required this.onNotificationTrigger});
 
@@ -29,8 +32,9 @@ class GeofenceManager {
         "GeofenceManager initialized with ${_incidents.length} incidents from cache.");
   }
 
-  // Updates the in-memory list when a real-time trigger fires
+  /// Called by the Background Service when a new/modified incident comes from Firestore.
   void addOrUpdateIncident(GeofenceModel incident) {
+    // 1. Handle visibility (remove if invisible)
     if (!incident.isVisible) {
       _incidents.removeWhere((i) => i.id == incident.id);
       _activeGeofences.remove(incident.id);
@@ -38,6 +42,7 @@ class GeofenceManager {
       return;
     }
 
+    // 2. Update the local list
     final index = _incidents.indexWhere((i) => i.id == incident.id);
     if (index != -1) {
       _incidents[index] = incident;
@@ -46,18 +51,24 @@ class GeofenceManager {
     }
     debugPrint(
         "GeofenceManager: Incident list updated. Count: ${_incidents.length}");
+
+    // 3. NEW: Check immediately if we should trigger a notification (don't wait for next GPS update)
+    if (_lastKnownPosition != null) {
+      _checkSingleIncident(incident, _lastKnownPosition!);
+    }
   }
 
   void onLocationUpdate(Position position) {
+    _lastKnownPosition = position; // Save for later use
+
     if (_incidents.isEmpty) return;
 
+    // We clear the active list on every movement to re-evaluate ranges
     final Set<String> previouslyActiveGeofences = Set.from(_activeGeofences);
     _activeGeofences.clear();
 
     for (final geofence in _incidents) {
-      if (!geofence.isVisible) {
-        continue;
-      }
+      if (!geofence.isVisible) continue;
 
       final distance = Geolocator.distanceBetween(
         position.latitude,
@@ -69,10 +80,33 @@ class GeofenceManager {
       if (distance <= geofence.radius) {
         _activeGeofences.add(geofence.id);
 
+        // Only notify if we weren't ALREADY active in this zone
         if (!previouslyActiveGeofences.contains(geofence.id)) {
           _onEnterGeofence(geofence, distance);
           onNotificationTrigger(_createIncidenceData(geofence), distance);
         }
+      }
+    }
+  }
+
+  // NEW: Helper to check just one incident against a position (used by real-time trigger)
+  void _checkSingleIncident(GeofenceModel geofence, Position position) {
+    final distance = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      geofence.latitude,
+      geofence.longitude,
+    );
+
+    if (distance <= geofence.radius) {
+      // If we are already tracking this as active, don't spam notifications
+      if (!_activeGeofences.contains(geofence.id)) {
+        _activeGeofences.add(geofence.id);
+        debugPrint(
+            "GeofenceManager: IMMEDIATE TRIGGER for new incident ${geofence.id}");
+
+        _onEnterGeofence(geofence, distance);
+        onNotificationTrigger(_createIncidenceData(geofence), distance);
       }
     }
   }
