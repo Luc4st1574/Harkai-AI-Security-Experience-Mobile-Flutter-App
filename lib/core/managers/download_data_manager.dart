@@ -29,6 +29,36 @@ class DownloadDataManager {
     }
   }
 
+  /// Updates the cache with a single incident without re-downloading everything.
+  /// Used by the background service when a real-time trigger fires.
+  Future<void> updateCacheWith(GeofenceModel incident) async {
+    try {
+      final cachedIncidents = await getCachedIncidents();
+
+      // Check if incident exists
+      final index = cachedIncidents.indexWhere((i) => i.id == incident.id);
+
+      if (index != -1) {
+        // Update existing
+        cachedIncidents[index] = incident;
+      } else {
+        // Add new
+        cachedIncidents.add(incident);
+      }
+
+      // Save back to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final incidentsJson =
+          jsonEncode(cachedIncidents.map((i) => i.toMap()).toList());
+      await prefs.setString(_incidentCacheKey, incidentsJson);
+
+      debugPrint("DownloadDataManager: Single incident cached: ${incident.id}");
+    } catch (e) {
+      debugPrint(
+          "DownloadDataManager: Error updating cache with single incident: $e");
+    }
+  }
+
   Future<List<GeofenceModel>> getCachedIncidents() async {
     final prefs = await SharedPreferences.getInstance();
     final incidentsJson = prefs.getString(_incidentCacheKey);
@@ -38,8 +68,7 @@ class DownloadDataManager {
     }
     return [];
   }
-  
-  /// NEW: Removes incidents from the cache that are marked as invisible in Firestore.
+
   Future<void> cleanupInvisibleIncidentsFromCache() async {
     debugPrint("Starting cache cleanup of invisible incidents...");
     final cachedIncidents = await getCachedIncidents();
@@ -49,9 +78,10 @@ class DownloadDataManager {
     }
 
     final List<String> cachedIds = cachedIncidents.map((i) => i.id).toList();
-    
+
     // Fetch the current visibility state of these incidents from Firestore.
-    final visibleIncidentsMap = await _firestoreService.getIncidentsVisibility(cachedIds);
+    final visibleIncidentsMap =
+        await _firestoreService.getIncidentsVisibility(cachedIds);
 
     final stillVisibleIncidents = cachedIncidents.where((incident) {
       return visibleIncidentsMap[incident.id] ?? false;
@@ -60,16 +90,18 @@ class DownloadDataManager {
     int removedCount = cachedIncidents.length - stillVisibleIncidents.length;
 
     if (removedCount > 0) {
-        // Save the cleaned list back to the cache.
-        final prefs = await SharedPreferences.getInstance();
-        final cleanedJson = jsonEncode(stillVisibleIncidents.map((i) => i.toMap()).toList());
-        await prefs.setString(_incidentCacheKey, cleanedJson);
-        debugPrint("Cache cleanup complete. Removed $removedCount invisible incidents.");
+      // Save the cleaned list back to the cache.
+      final prefs = await SharedPreferences.getInstance();
+      final cleanedJson =
+          jsonEncode(stillVisibleIncidents.map((i) => i.toMap()).toList());
+      await prefs.setString(_incidentCacheKey, cleanedJson);
+      debugPrint(
+          "Cache cleanup complete. Removed $removedCount invisible incidents.");
     } else {
-        debugPrint("Cache cleanup complete. No incidents needed to be removed.");
+      debugPrint("Cache cleanup complete. No incidents needed to be removed.");
     }
   }
-  
+
   Future<void> checkForNewIncidents() async {
     await fetchAndCacheAllIncidents();
   }

@@ -7,7 +7,8 @@ import 'package:harkai/core/managers/download_data_manager.dart';
 import 'package:harkai/features/home/utils/incidences.dart';
 
 // Define a type for the callback function for better readability.
-typedef NotificationCallback = void Function(IncidenceData incident, double distance);
+typedef NotificationCallback = void Function(
+    IncidenceData incident, double distance);
 
 class GeofenceManager {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -15,16 +16,36 @@ class GeofenceManager {
   final DownloadDataManager _downloadDataManager;
   final NotificationCallback onNotificationTrigger;
 
-  // MODIFIED: Renamed for clarity, this list holds all incidents for checking.
   List<GeofenceModel> _incidents = [];
   final Set<String> _activeGeofences = {};
 
-  GeofenceManager(this._downloadDataManager, {required this.onNotificationTrigger});
+  GeofenceManager(this._downloadDataManager,
+      {required this.onNotificationTrigger});
 
   Future<void> initialize() async {
     await _downloadDataManager.fetchAndCacheAllIncidents();
     _incidents = await _downloadDataManager.getCachedIncidents();
-    debugPrint("GeofenceManager initialized with ${_incidents.length} incidents from cache.");
+    debugPrint(
+        "GeofenceManager initialized with ${_incidents.length} incidents from cache.");
+  }
+
+  // Updates the in-memory list when a real-time trigger fires
+  void addOrUpdateIncident(GeofenceModel incident) {
+    if (!incident.isVisible) {
+      _incidents.removeWhere((i) => i.id == incident.id);
+      _activeGeofences.remove(incident.id);
+      debugPrint("GeofenceManager: Removed invisible incident: ${incident.id}");
+      return;
+    }
+
+    final index = _incidents.indexWhere((i) => i.id == incident.id);
+    if (index != -1) {
+      _incidents[index] = incident;
+    } else {
+      _incidents.add(incident);
+    }
+    debugPrint(
+        "GeofenceManager: Incident list updated. Count: ${_incidents.length}");
   }
 
   void onLocationUpdate(Position position) {
@@ -34,9 +55,8 @@ class GeofenceManager {
     _activeGeofences.clear();
 
     for (final geofence in _incidents) {
-      // ADDED: Check if the geofence (incident) is visible before processing
       if (!geofence.isVisible) {
-        continue; // Skip this geofence if it's not visible (e.g., expired)
+        continue;
       }
 
       final distance = Geolocator.distanceBetween(
@@ -49,7 +69,6 @@ class GeofenceManager {
       if (distance <= geofence.radius) {
         _activeGeofences.add(geofence.id);
 
-        // This block is only entered ONCE when the user crosses into the geofence.
         if (!previouslyActiveGeofences.contains(geofence.id)) {
           _onEnterGeofence(geofence, distance);
           onNotificationTrigger(_createIncidenceData(geofence), distance);
@@ -79,7 +98,6 @@ class GeofenceManager {
     }
   }
 
-  // Helper to convert GeofenceModel to IncidenceData for the callback
   IncidenceData _createIncidenceData(GeofenceModel geofence) {
     return IncidenceData(
       id: geofence.id,
@@ -88,7 +106,7 @@ class GeofenceManager {
       type: geofence.type,
       description: geofence.description,
       timestamp: Timestamp.now(),
-      isVisible: geofence.isVisible, // Ensure visibility status is passed correctly
+      isVisible: geofence.isVisible,
       userId: '',
     );
   }
