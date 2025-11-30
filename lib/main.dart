@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:harkai/core/config/firebase_options.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:harkai/core/services/background_service.dart';
@@ -11,9 +12,11 @@ import 'package:workmanager/workmanager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  final List<Locale> deviceLocalesList = WidgetsBinding.instance.platformDispatcher.locales;
-  final Locale devicePrimaryLocale = WidgetsBinding.instance.platformDispatcher.locale;
+
+  final List<Locale> deviceLocalesList =
+      WidgetsBinding.instance.platformDispatcher.locales;
+  final Locale devicePrimaryLocale =
+      WidgetsBinding.instance.platformDispatcher.locale;
   debugPrint('FLUTTER DETECTED DEVICE LOCALES LIST: $deviceLocalesList');
   debugPrint('FLUTTER DETECTED PRIMARY DEVICE LOCALE: $devicePrimaryLocale');
 
@@ -31,11 +34,16 @@ void main() async {
       );
       debugPrint('Firebase initialized successfully.');
 
+      // --- ADDED: Subscribe to the 'incidents' topic ---
+      // This connects the app to the Cloud Function's mass alert system.
+      await FirebaseMessaging.instance.subscribeToTopic('incidents');
+      debugPrint("Subscribed to global incidents topic!");
+      // -------------------------------------------------
+
       await FirebaseAppCheck.instance.activate(
         androidProvider: AndroidProvider.playIntegrity,
       );
       debugPrint('Firebase App Check activated.');
-
     } else {
       debugPrint('Firebase already initialized: ${Firebase.apps}');
     }
@@ -51,9 +59,9 @@ void main() async {
     );
 
     runApp(const MyApp());
-    
   } catch (e) {
-    debugPrint('Error during Firebase initialization or App Check activation: $e');
+    debugPrint(
+        'Error during Firebase initialization or App Check activation: $e');
     runApp(const ErrorApp());
     return;
   }
@@ -98,14 +106,16 @@ class _MyAppState extends State<MyApp> {
                 if (supportedLocale.countryCode == null ||
                     supportedLocale.countryCode == '' ||
                     supportedLocale.countryCode == deviceLocale.countryCode) {
-                  debugPrint('MATCH! Using app locale: $supportedLocale for device locale: $deviceLocale');
+                  debugPrint(
+                      'MATCH! Using app locale: $supportedLocale for device locale: $deviceLocale');
                   return supportedLocale;
                 }
               }
             }
           }
         }
-        debugPrint('NO MATCH from device preferences, defaulting to ${supportedLocales.first}');
+        debugPrint(
+            'NO MATCH from device preferences, defaulting to ${supportedLocales.first}');
         return supportedLocales.first;
       },
       theme: ThemeData(
