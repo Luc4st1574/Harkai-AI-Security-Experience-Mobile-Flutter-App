@@ -154,6 +154,7 @@ class _IncidentScreenState extends State<IncidentScreen> {
       case MakerType.pet:
         return ['vet'];
       case MakerType.emergency:
+        // Excluded 'vet' terms here, but we also check explicitly below
         return ['hosp', 'clin', 'med', 'emerg', 'salud', 'health'];
       case MakerType.fire:
         return ['bomb', 'fire', 'estaci'];
@@ -348,6 +349,17 @@ class _IncidentScreenState extends State<IncidentScreen> {
     );
   }
 
+  // Helper to remove accents for better matching (e.g., 'grúa' -> 'grua')
+  String _removeDiacritics(String str) {
+    return str
+        .replaceAll(RegExp(r'[áÁ]'), 'a')
+        .replaceAll(RegExp(r'[éÉ]'), 'e')
+        .replaceAll(RegExp(r'[íÍ]'), 'i')
+        .replaceAll(RegExp(r'[óÓ]'), 'o')
+        .replaceAll(RegExp(r'[úÚüÜ]'), 'u')
+        .replaceAll(RegExp(r'[ñÑ]'), 'n');
+  }
+
   void _processIncidentsUpdate(List<IncidenceData> allIncidents) {
     if (!mounted) return;
 
@@ -373,9 +385,14 @@ class _IncidentScreenState extends State<IncidentScreen> {
     }
 
     if (_searchTerm.isNotEmpty) {
-      filteredIncidents.removeWhere((incident) => !incident.description
-          .toLowerCase()
-          .contains(_searchTerm.toLowerCase()));
+      final String normalizedSearchTerm =
+          _removeDiacritics(_searchTerm.toLowerCase());
+
+      filteredIncidents.removeWhere((incident) {
+        final String normalizedDesc =
+            _removeDiacritics(incident.description.toLowerCase());
+        return !normalizedDesc.contains(normalizedSearchTerm);
+      });
     }
 
     // UPDATED: Include Event in the 24-hour expiry check along with Pet
@@ -644,8 +661,30 @@ class _IncidentScreenState extends State<IncidentScreen> {
         if (searchTerms.isNotEmpty) {
           final nearbyPlaces = _allFetchedIncidents.where((incident) {
             if (incident.type != MakerType.place) return false;
-            final desc = incident.description.toLowerCase();
-            return searchTerms.any((term) => desc.contains(term));
+
+            // UPDATED: Accent-proof check using _removeDiacritics
+            final String normalizedDesc =
+                _removeDiacritics(incident.description.toLowerCase());
+
+            // 1. Must match at least one positive term (e.g. 'hospital')
+            final bool matchesPositive = searchTerms.any((term) {
+              final String normalizedTerm =
+                  _removeDiacritics(term.toLowerCase());
+              return normalizedDesc.contains(normalizedTerm);
+            });
+
+            if (!matchesPositive) return false;
+
+            // 2. Specific exclusion: If Emergency, exclude 'vet'
+            //    This ensures "Clinica Veterinaria" doesn't show up for "Clinica" search
+            if (widget.incidentType == MakerType.emergency) {
+              if (normalizedDesc.contains('vet') ||
+                  normalizedDesc.contains('veterin')) {
+                return false;
+              }
+            }
+
+            return true;
           }).toList();
 
           if (_currentPosition != null) {
