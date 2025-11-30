@@ -303,6 +303,8 @@ class _PlacesScreenState extends State<PlacesScreen> {
       if (result != null) {
         final String? description = result['description'];
         final String? imageUrl = result['imageUrl'];
+        // --- FIX: Extract contactInfo here ---
+        final String? contactInfo = result['contactInfo'];
 
         if (imageUrl == null || imageUrl.isEmpty) {
           if (mounted) {
@@ -319,6 +321,9 @@ class _PlacesScreenState extends State<PlacesScreen> {
               longitude: targetLng,
               description: description,
               imageUrl: imageUrl,
+              // --- FIX: Pass contactInfo here ---
+              // Ensure your MarkerManager definition accepts this parameter!
+              contactInfo: contactInfo,
             );
           }
         }

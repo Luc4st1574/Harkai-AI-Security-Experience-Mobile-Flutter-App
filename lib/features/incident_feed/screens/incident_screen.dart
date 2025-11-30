@@ -238,10 +238,9 @@ class _IncidentScreenState extends State<IncidentScreen> {
                     trailing: IconButton(
                       icon: const Icon(Icons.phone, color: Colors.white),
                       onPressed: () {
-                        // Use the phone number from the incident data
-                        final phone = place.phoneNumber ?? '';
-                        _phoneService.makePhoneCall(
-                          phoneNumber: phone,
+                        // UPDATED: Use new service method
+                        _phoneService.makePhoneCallFromIncidentId(
+                          incidentId: place.id,
                           context: context,
                         );
                       },
@@ -629,7 +628,6 @@ class _IncidentScreenState extends State<IncidentScreen> {
         );
       },
     );
-    _isFakeDonationProcessing = false;
   }
 
   @override

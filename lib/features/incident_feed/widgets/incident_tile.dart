@@ -140,9 +140,10 @@ class IncidentTile extends StatelessWidget {
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(20),
                                 onTap: () {
-                                  final phone = incident.phoneNumber ?? '';
-                                  phoneService.makePhoneCall(
-                                      phoneNumber: phone, context: context);
+                                  // UPDATED: Call the new method
+                                  phoneService.makePhoneCallFromIncidentId(
+                                      incidentId: incident.id,
+                                      context: context);
                                 },
                                 child: Container(
                                   width: 32, // Fixed width for perfect circle
