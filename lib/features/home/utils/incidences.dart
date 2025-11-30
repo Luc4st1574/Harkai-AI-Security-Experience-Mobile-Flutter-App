@@ -160,7 +160,6 @@ class FirestoreService {
 
   FirestoreService();
 
-  /// Ensures the incident types collection exists.
   Future<void> ensureIncidentTypesCollectionExists() async {
     try {
       final QuerySnapshot snapshot =
@@ -193,19 +192,18 @@ class FirestoreService {
     String? city,
     String? country,
   }) async {
-    if (type == MakerType.none) {
-      return false;
-    }
+    if (type == MakerType.none) return false;
+
     final User? currentUser = _firebaseAuth.currentUser;
-    if (currentUser == null) {
-      return false;
-    }
+    if (currentUser == null) return false;
+
     try {
       await _heatPointsCollection.add({
         'userId': currentUser.uid,
         'latitude': latitude,
         'longitude': longitude,
-        'type': type.index,
+        'type': type
+            .index, // Usa el índice del Enum, correcto si se usa Consistentemente
         'description': description ?? '',
         'imageUrl': imageUrl,
         'timestamp': FieldValue.serverTimestamp(),
@@ -221,6 +219,8 @@ class FirestoreService {
       return false;
     }
   }
+
+  // ... (El resto de métodos Stream y Consultas son iguales) ...
 
   Stream<List<IncidenceData>> getIncidencesStream() {
     return _heatPointsCollection
@@ -239,15 +239,12 @@ class FirestoreService {
           .whereType<IncidenceData>()
           .toList();
     }).handleError((error) {
-      debugPrint('Error in getIncidencesStream: $error');
       return <IncidenceData>[];
     });
   }
 
   Stream<List<IncidenceData>> getIncidencesStreamByType(MakerType type) {
-    if (type == MakerType.none) {
-      return Stream.value([]);
-    }
+    if (type == MakerType.none) return Stream.value([]);
     return _heatPointsCollection
         .where('isVisible', isEqualTo: true)
         .where('type', isEqualTo: type.index)
@@ -335,7 +332,6 @@ class FirestoreService {
         }
         bool shouldMarkInvisible = false;
 
-        // UPDATED: Check for Event as well as Pet for 24h rule
         if (incidenceType == MakerType.pet ||
             incidenceType == MakerType.event) {
           if (docTimestamp.compareTo(petExpiryTimestamp) < 0) {

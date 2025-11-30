@@ -1,4 +1,4 @@
-// lib/features/home/modals/modules/incident_voice_description_modal.dart
+// lib/features/home/modals/incident_description.dart
 
 import 'package:flutter/material.dart';
 import 'package:harkai/l10n/app_localizations.dart';
@@ -7,7 +7,6 @@ import 'modules/ui_builders.dart';
 import 'modules/incident_modal_controller.dart';
 import 'modules/incident_state.dart';
 import 'modules/incident_status_helper.dart';
-
 import '../utils/markers.dart';
 
 class IncidentVoiceDescriptionModal extends StatefulWidget {
@@ -35,7 +34,6 @@ class _IncidentVoiceDescriptionModalState
     super.initState();
     _controller = IncidentModalController(currentMarkerType: widget.markerType);
 
-    // Animation Setup
     _micAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 150),
@@ -44,7 +42,6 @@ class _IncidentVoiceDescriptionModalState
       CurvedAnimation(parent: _micAnimationController, curve: Curves.easeInOut),
     );
 
-    // Initialize Controller
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.initialize();
       _controller.addListener(_onStateChange);
@@ -53,15 +50,11 @@ class _IncidentVoiceDescriptionModalState
 
   void _onStateChange() {
     if (!mounted) return;
-
-    // Handle Animation Trigger
     if (_controller.currentInputState == MediaInputState.recordingAudio) {
       _micAnimationController.forward();
     } else {
       _micAnimationController.reverse();
     }
-
-    // Rebuild View
     setState(() {});
   }
 
@@ -79,22 +72,17 @@ class _IncidentVoiceDescriptionModalState
     super.dispose();
   }
 
-  // --- Handlers ---
-
   void _handleFinalSubmit() async {
-    // Basic validation that needs UI feedback (Snackbar)
     if (_controller.needsContactInfo() &&
         _controller.contactInfoController.text.trim().length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             backgroundColor: Colors.redAccent,
-            content:
-                Text("Por favor ingrese un número válido (mínimo 6 dígitos).")),
+            content: Text("Por favor ingrese un número válido.")),
       );
       return;
     }
 
-    // Call Controller
     final result = await _controller.finalSubmit();
 
     if (result != null && mounted) {
@@ -105,8 +93,7 @@ class _IncidentVoiceDescriptionModalState
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               backgroundColor: Colors.orange,
-              content: Text(
-                  "Es obligatorio adjuntar una imagen para este tipo de reporte.")),
+              content: Text("Es obligatoria una imagen.")),
         );
       }
     }
@@ -118,13 +105,11 @@ class _IncidentVoiceDescriptionModalState
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Extract values for clarity
     final state = _controller.currentInputState;
     final markerType = _controller.currentMarkerType;
     final markerDetails = getMarkerInfo(markerType, _localizations!);
     final accentColor = markerDetails?.color ?? Colors.blueGrey;
 
-    // Get Text from Helper
     final statusText = IncidentStatusHelper.getStatusText(
         state: state,
         markerType: markerType,
@@ -141,24 +126,17 @@ class _IncidentVoiceDescriptionModalState
         isImageApproved: _controller.isImageApprovedByGemini,
         isImageMandatory: _controller.isImageMandatory());
 
-    // Boolean flags for UI logic
     bool isProcessingAny = state == MediaInputState.sendingAudioToGemini ||
         state == MediaInputState.sendingImageToGemini ||
         state == MediaInputState.uploadingMedia;
-
     bool isContactInputActive = state == MediaInputState.contactInfoInput;
-    bool showGalleryButton = markerType == MakerType.place ||
-        markerType == MakerType.pet ||
-        markerType == MakerType.event;
-
-    // --- View Structure ---
 
     return PopScope(
       canPop: !isProcessingAny && state != MediaInputState.recordingAudio,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (!isProcessingAny && state != MediaInputState.recordingAudio) {
-          _controller.cancelInput(); // Clean up if needed
+          _controller.cancelInput();
         }
       },
       child: Dialog(
@@ -171,7 +149,7 @@ class _IncidentVoiceDescriptionModalState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // Header Status
+              // Título (se actualiza solo si la IA cambia el tipo)
               Text(
                 statusText,
                 style: TextStyle(
@@ -182,21 +160,21 @@ class _IncidentVoiceDescriptionModalState
                         : accentColor),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 10),
+
+              // [ELIMINADO] El Dropdown manual ya no está aquí.
+
+              const SizedBox(height: 5),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Text(instructionText,
                     style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.8)),
+                        fontSize: 14, color: Colors.white.withOpacity(0.8)),
                     textAlign: TextAlign.center),
               ),
               const SizedBox(height: 15),
 
-              // 1. Contact Info Section
               if (isContactInputActive) _buildContactSection(accentColor),
 
-              // 2. Confirmed Audio Display
               IncidentModalUiBuilders.buildConfirmedAudioArea(
                 shouldShow: state == MediaInputState.displayingConfirmedAudio ||
                     state == MediaInputState.imagePreview ||
@@ -207,7 +185,6 @@ class _IncidentVoiceDescriptionModalState
                 localizations: _localizations!,
               ),
 
-              // 3. Image Preview Display
               IncidentModalUiBuilders.buildImagePreviewArea(
                 shouldShow: _controller.capturedImageFile != null,
                 capturedImageFile: _controller.capturedImageFile,
@@ -221,20 +198,45 @@ class _IncidentVoiceDescriptionModalState
               ),
               const SizedBox(height: 10),
 
-              // 4. Main Controls
+              // --- BOTONES PRINCIPALES ---
               if (isProcessingAny)
                 IncidentModalUiBuilders.buildProcessingIndicator(
                     accentColor: accentColor,
                     userInstructionText: instructionText)
               else if (state == MediaInputState.error)
-                IncidentModalUiBuilders.buildErrorControls(
-                  localizations: _localizations!,
-                  accentColor: accentColor,
-                  userInstructionText: instructionText,
-                  onRetryFullProcess: _controller.retryFullProcess,
+                // Aquí mantenemos la lógica de SUGERENCIA DE CAMBIO
+                Column(
+                  children: [
+                    if (_controller.pendingSuggestedType != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10.0),
+                        child: ElevatedButton.icon(
+                          onPressed: () => _controller.applySuggestedChange(),
+                          icon: const Icon(Icons.auto_fix_high,
+                              color: Colors.white),
+                          label: Text(
+                            "Cambiar a ${_controller.pendingSuggestedType!.name.toUpperCase()}",
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                          ),
+                        ),
+                      ),
+                    IncidentModalUiBuilders.buildErrorControls(
+                      localizations: _localizations!,
+                      accentColor: accentColor,
+                      userInstructionText: instructionText,
+                      onRetryFullProcess: _controller.retryFullProcess,
+                    ),
+                  ],
                 )
               else if (!isContactInputActive)
-                _buildMainControls(state, accentColor, showGalleryButton),
+                _buildMainControls(state, accentColor),
             ],
           ),
         ),
@@ -245,31 +247,25 @@ class _IncidentVoiceDescriptionModalState
   Widget _buildContactSection(Color accentColor) {
     return Column(
       children: [
-        const SizedBox(height: 10),
         TextField(
           controller: _controller.contactInfoController,
           keyboardType: TextInputType.phone,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            labelText: "Información de contacto (REQUERIDO)",
+            labelText: "Contacto (Requerido)",
             labelStyle: TextStyle(color: accentColor),
-            enabledBorder: OutlineInputBorder(
-                borderSide:
-                    BorderSide(color: Colors.white.withValues(alpha: 0.3))),
+            enabledBorder: const OutlineInputBorder(
+                borderSide: BorderSide(color: Colors.white30)),
             focusedBorder:
                 OutlineInputBorder(borderSide: BorderSide(color: accentColor)),
             prefixIcon: Icon(Icons.phone, color: accentColor),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 10),
         ElevatedButton(
           onPressed: () {
-            if (_controller.contactInfoController.text.trim().length < 6) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text("Mínimo 6 dígitos."),
-                  backgroundColor: Colors.red));
+            if (_controller.contactInfoController.text.trim().length < 6)
               return;
-            }
             _controller.submitContactInfo();
           },
           style: ElevatedButton.styleFrom(backgroundColor: accentColor),
@@ -279,18 +275,18 @@ class _IncidentVoiceDescriptionModalState
     );
   }
 
-  Widget _buildMainControls(
-      MediaInputState state, Color accentColor, bool showGalleryButton) {
+  Widget _buildMainControls(MediaInputState state, Color accentColor) {
+    bool showGalleryButton = _controller.currentMarkerType == MakerType.place ||
+        _controller.currentMarkerType == MakerType.pet ||
+        _controller.currentMarkerType == MakerType.event;
+
     return Column(
       children: [
         if (state == MediaInputState.textInput)
           _buildTextInputArea(accentColor),
-
-        // Mic Control
         if (state == MediaInputState.idle ||
             state == MediaInputState.recordingAudio ||
             state == MediaInputState.textInput) ...[
-          // Logic to show Mic only if supported/idle
           if (state != MediaInputState.textInput)
             IncidentModalUiBuilders.buildMicInputControl(
               context: context,
@@ -306,18 +302,13 @@ class _IncidentVoiceDescriptionModalState
                 if (!_controller.hasMicPermission) _controller.initialize();
               },
             ),
-
-          // Extra buttons below Mic
           if (state == MediaInputState.idle && _controller.needsContactInfo())
             TextButton(
                 onPressed: () => setState(() => _controller.currentInputState =
                     MediaInputState.contactInfoInput),
-                child: Text("Editar Contacto",
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.6)))),
+                child: const Text("Editar Contacto",
+                    style: TextStyle(color: Colors.white60))),
         ],
-
-        // Camera Control
         if (state == MediaInputState.displayingConfirmedAudio ||
             state == MediaInputState.imagePreview)
           Padding(
@@ -331,21 +322,7 @@ class _IncidentVoiceDescriptionModalState
               showGalleryButton: showGalleryButton,
             ),
           ),
-
         const SizedBox(height: 20),
-
-        // Back Button when viewing confirmed audio
-        if (state == MediaInputState.displayingConfirmedAudio)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10.0),
-            child: TextButton(
-              onPressed: _controller.retryFullProcess,
-              child: const Text("Volver / Editar Descripción",
-                  style: TextStyle(color: Colors.white70)),
-            ),
-          ),
-
-        // Dynamic Action Buttons
         IncidentModalUiBuilders.buildActionButtons(
           context: context,
           localizations: _localizations!,
@@ -369,16 +346,12 @@ class _IncidentVoiceDescriptionModalState
           },
           allowAudioOnlySubmit: !_controller.isImageMandatory(),
         ),
-
-        // Toggle Text Input
         if (state == MediaInputState.idle)
           TextButton(
             onPressed: _controller.switchToTextInput,
             child: Text(_localizations!.incidentModalButtonEnterTextInstead,
                 style: TextStyle(color: accentColor)),
           ),
-
-        // Cancel
         if (state != MediaInputState.recordingAudio)
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -398,7 +371,7 @@ class _IncidentVoiceDescriptionModalState
           maxLines: 3,
           decoration: InputDecoration(
             hintText: _localizations!.incidentModalInstructionEnterText,
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+            hintStyle: const TextStyle(color: Colors.white60),
             border: const OutlineInputBorder(),
           ),
         ),
@@ -410,7 +383,7 @@ class _IncidentVoiceDescriptionModalState
               icon: const Icon(Icons.mic, color: Colors.white70, size: 18),
               label: const Text("Usar Audio",
                   style: TextStyle(color: Colors.white70)),
-              onPressed: _controller.cancelInput, // Goes back to Idle
+              onPressed: _controller.cancelInput,
             ),
             ElevatedButton.icon(
               icon:
@@ -431,7 +404,6 @@ class _IncidentVoiceDescriptionModalState
   }
 }
 
-// --- GLOBAL HELPER FUNCTION ---
 Future<Map<String, dynamic>?> showIncidentVoiceDescriptionDialog({
   required BuildContext context,
   required MakerType markerType,

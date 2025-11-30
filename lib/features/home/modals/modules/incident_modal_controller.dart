@@ -7,11 +7,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:record/record.dart';
-import 'package:permission_handler/permission_handler.dart'; // REQUIRED FOR isGranted
+import 'package:permission_handler/permission_handler.dart';
 
 import 'media_services.dart';
 import 'media_handler.dart';
-import 'incident_state.dart'; // IMPORT THE STATE ENUM
+import 'incident_state.dart';
 import 'package:harkai/core/services/storage_service.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
 import 'package:harkai/features/home/utils/markers.dart';
@@ -25,7 +25,12 @@ class IncidentModalController extends ChangeNotifier {
 
   // --- State Variables ---
   MediaInputState currentInputState = MediaInputState.idle;
+
+  // ESTE ES EL TIPO REAL ACTUALMENTE SELECCIONADO
   MakerType currentMarkerType;
+
+  // NUEVO: Almacena la sugerencia de la IA si hay mismatch
+  MakerType? pendingSuggestedType;
 
   String? recordedAudioPath;
   String geminiAudioProcessedText = '';
@@ -37,7 +42,6 @@ class IncidentModalController extends ChangeNotifier {
 
   bool hasMicPermission = false;
 
-  // --- Text Controllers ---
   final TextEditingController textEditingController = TextEditingController();
   final TextEditingController contactInfoController = TextEditingController();
 
@@ -45,7 +49,6 @@ class IncidentModalController extends ChangeNotifier {
 
   // --- Initialization ---
   Future<void> initialize() async {
-    // 1. Check Permissions
     var micStatus = await _mediaServices.getMicrophonePermissionStatus();
     hasMicPermission = micStatus.isGranted;
 
@@ -54,7 +57,6 @@ class IncidentModalController extends ChangeNotifier {
           openSettingsOnError: true);
     }
 
-    // 2. Initialize AI
     try {
       _mediaServices.initializeGeminiModel();
     } catch (e) {
@@ -62,7 +64,6 @@ class IncidentModalController extends ChangeNotifier {
       return;
     }
 
-    // 3. Set Initial State based on Type
     if (needsContactInfo()) {
       currentInputState = MediaInputState.contactInfoInput;
     } else {
@@ -84,14 +85,33 @@ class IncidentModalController extends ChangeNotifier {
         currentMarkerType == MakerType.place;
   }
 
-  void setErrorState(String message,
-      {bool isMismatch = false, bool isUnclear = false}) {
+  void setErrorState(String message) {
     currentInputState = MediaInputState.error;
     geminiAudioProcessedText = message;
     notifyListeners();
   }
 
   // --- Actions ---
+
+  // Método para cambiar el tipo manualmente o por IA
+  void changeIncidentType(MakerType newType) {
+    if (currentMarkerType != newType) {
+      currentMarkerType = newType;
+      pendingSuggestedType = null; // Limpiar sugerencias pendientes
+      notifyListeners();
+    }
+  }
+
+  // Método para aplicar la sugerencia de la IA
+  void applySuggestedChange() {
+    if (pendingSuggestedType != null) {
+      changeIncidentType(pendingSuggestedType!);
+      geminiAudioProcessedText = ""; // Limpiar error
+      currentInputState =
+          MediaInputState.idle; // Volver a empezar con el nuevo tipo
+      notifyListeners();
+    }
+  }
 
   void submitContactInfo() {
     currentInputState = MediaInputState.idle;
@@ -100,7 +120,6 @@ class IncidentModalController extends ChangeNotifier {
 
   Future<bool> startRecording() async {
     _clearAllMediaData(updateState: false);
-
     if (!hasMicPermission) return false;
 
     recordedAudioPath = await _deviceMediaHandler.getTemporaryFilePath("m4a");
@@ -136,25 +155,19 @@ class IncidentModalController extends ChangeNotifier {
 
   Future<void> sendAudioToGemini() async {
     if (recordedAudioPath == null) return;
-
     currentInputState = MediaInputState.sendingAudioToGemini;
     notifyListeners();
 
     try {
       final audioFile = File(recordedAudioPath!);
       final Uint8List audioBytes = await audioFile.readAsBytes();
-      final String incidentTypeName = currentMarkerType.name
-          .toString()
-          .split('.')
-          .last
-          .capitalizeAllWords();
+      final String incidentTypeName = currentMarkerType.name.split('.').last;
 
       final text = await _mediaServices.analyzeAudioWithGemini(
         audioBytes: audioBytes,
         audioMimeType: "audio/mp4",
         incidentTypeName: incidentTypeName,
       );
-
       _processGeminiResponse(text);
     } catch (e) {
       setErrorState(e.toString());
@@ -163,30 +176,25 @@ class IncidentModalController extends ChangeNotifier {
 
   Future<void> sendTextToGemini() async {
     if (textEditingController.text.isEmpty) return;
-
     currentInputState = MediaInputState.sendingAudioToGemini;
     notifyListeners();
 
     try {
-      final incidentTypeName = currentMarkerType.name
-          .toString()
-          .split('.')
-          .last
-          .capitalizeAllWords();
-
+      final incidentTypeName = currentMarkerType.name.split('.').last;
       final response = await _mediaServices.analyzeTextWithGemini(
         text: textEditingController.text,
         incidentTypeName: incidentTypeName,
       );
-
-      _processGeminiResponse(response, isTextAnalysis: true);
+      _processGeminiResponse(response);
     } catch (e) {
       setErrorState(e.toString());
     }
   }
 
-  Future<void> _processGeminiResponse(String? text,
-      {bool isTextAnalysis = false}) async {
+  // Lógica principal de procesamiento de respuesta
+  void _processGeminiResponse(String? text) {
+    pendingSuggestedType = null; // Reset
+
     if (text != null && text.isNotEmpty) {
       if (text.startsWith("MATCH:")) {
         geminiAudioProcessedText = text.substring("MATCH:".length).trim();
@@ -194,25 +202,30 @@ class IncidentModalController extends ChangeNotifier {
             MediaInputState.audioDescriptionReadyForConfirmation;
         notifyListeners();
       } else if (text.startsWith("MISMATCH:")) {
+        // AUTOMATIZACIÓN: Extraer el tipo sugerido
         String suggestedTypeStr = text.substring("MISMATCH:".length).trim();
+        // Limpiar puntuación extra
+        suggestedTypeStr = suggestedTypeStr.replaceAll(RegExp(r'[^\w\s]'), '');
+
         MakerType? newType = _mapStringToMakerType(suggestedTypeStr);
 
         if (newType != null && newType != currentMarkerType) {
-          currentMarkerType = newType;
+          // Guardamos la sugerencia
+          pendingSuggestedType = newType;
+          geminiAudioProcessedText =
+              "Parece que esto es un incidente de tipo: ${newType.name.toUpperCase()}.";
+          // Usamos estado de error para mostrar la UI de decisión
+          currentInputState = MediaInputState.error;
           notifyListeners();
-          // Recursive retry
-          if (isTextAnalysis) {
-            await sendTextToGemini();
-          } else {
-            await sendAudioToGemini();
-          }
           return;
         }
+        // Si no se reconoce el tipo, error genérico
         geminiAudioProcessedText = text;
         currentInputState = MediaInputState.error;
         notifyListeners();
       } else {
-        geminiAudioProcessedText = text;
+        // UNCLEAR u otros
+        geminiAudioProcessedText = text.replaceFirst("UNCLEAR:", "").trim();
         currentInputState = MediaInputState.error;
         notifyListeners();
       }
@@ -231,7 +244,6 @@ class IncidentModalController extends ChangeNotifier {
   }
 
   // --- Image Handling ---
-
   Future<void> captureImage() async {
     _clearImageData(updateState: false);
     final file = await _deviceMediaHandler.captureImageFromCamera(
@@ -265,11 +277,7 @@ class IncidentModalController extends ChangeNotifier {
       final Uint8List imageBytes = await capturedImageFile!.readAsBytes();
       final String mimeType =
           capturedImageFile!.path.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      final String incidentTypeName = currentMarkerType.name
-          .toString()
-          .split('.')
-          .last
-          .capitalizeAllWords();
+      final String incidentTypeName = currentMarkerType.name.split('.').last;
 
       final text = await _mediaServices.analyzeImageWithGemini(
         imageBytes: imageBytes,
@@ -299,20 +307,17 @@ class IncidentModalController extends ChangeNotifier {
 
   // --- Submission ---
 
-  /// Returns null if failed/waiting, or a Map if ready to pop
+  /// Returns map with correct 'finalMarkerType'
   Future<Map<String, dynamic>?> finalSubmit() async {
     if (_currentUser?.uid == null) return null;
 
-    // Validation
     if (needsContactInfo() && contactInfoController.text.trim().length < 6) {
       return null;
     }
-
     if (isImageMandatory() && capturedImageFile == null) {
       return null;
     }
 
-    // Upload Image if exists and approved
     if (capturedImageFile != null &&
         isImageApprovedByGemini &&
         uploadedImageUrl == null) {
@@ -323,12 +328,12 @@ class IncidentModalController extends ChangeNotifier {
           storageService: _storageService,
           imageFile: capturedImageFile!,
           userId: _currentUser!.uid,
-          incidentType: currentMarkerType.name);
+          incidentType: currentMarkerType.name); // USA EL TIPO ACTUAL
 
       if (uploadedImageUrl == null) {
         currentInputState = MediaInputState.imageAnalyzed;
         notifyListeners();
-        return null; // Upload failed
+        return null;
       }
     }
 
@@ -338,6 +343,7 @@ class IncidentModalController extends ChangeNotifier {
         'imageUrl': uploadedImageUrl,
         'contactInfo':
             needsContactInfo() ? contactInfoController.text.trim() : null,
+        // AQUÍ ESTÁ LA CLAVE: DEVOLVEMOS EL TIPO QUE PUEDE HABER CAMBIADO
         'finalMarkerType': currentMarkerType,
       };
     }
@@ -345,7 +351,6 @@ class IncidentModalController extends ChangeNotifier {
   }
 
   // --- Utils ---
-
   void retryFullProcess() {
     _deviceMediaHandler.deleteTemporaryFile(recordedAudioPath);
     recordedAudioPath = null;
@@ -364,7 +369,6 @@ class IncidentModalController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Internal Cleanup
   void _clearImageData({bool updateState = true}) {
     capturedImageFile = null;
     geminiImageAnalysisResultText = '';
@@ -387,6 +391,7 @@ class IncidentModalController extends ChangeNotifier {
     confirmedAudioDescription = '';
     geminiImageAnalysisResultText = '';
     isImageApprovedByGemini = false;
+    pendingSuggestedType = null;
 
     if (updateState) {
       currentInputState = MediaInputState.idle;
@@ -406,6 +411,8 @@ class IncidentModalController extends ChangeNotifier {
       return MakerType.crash;
     if (cleaned.contains('fire') || cleaned.contains('incendio'))
       return MakerType.fire;
+    if (cleaned.contains('theft') || cleaned.contains('robo'))
+      return MakerType.theft;
     return null;
   }
 

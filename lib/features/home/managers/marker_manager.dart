@@ -102,7 +102,6 @@ class MarkerManager {
     String? description,
     String? imageUrl,
     String? contactInfo,
-    // NEW Location params
     String? district,
     String? city,
     String? country,
@@ -115,9 +114,9 @@ class MarkerManager {
       description: description,
       imageUrl: imageUrl,
       contactInfo: contactInfo,
-      district: district, // Pass
-      city: city, // Pass
-      country: country, // Pass
+      district: district,
+      city: city,
+      country: country,
     );
 
     if (context.mounted) {
@@ -145,7 +144,6 @@ class MarkerManager {
     required MakerType newMarkerToSelect,
     required double? targetLatitude,
     required double? targetLongitude,
-    // NEW Location params
     String? district,
     String? city,
     String? country,
@@ -170,19 +168,27 @@ class MarkerManager {
         final String? imageUrl = result['imageUrl'];
         final String? contactInfo = result['contactInfo'];
 
+        // --- CORRECCIÓN: Usar el tipo devuelto por el modal si existe ---
+        MakerType typeToSave = _selectedIncident;
+        if (result.containsKey('finalMarkerType') &&
+            result['finalMarkerType'] is MakerType) {
+          typeToSave = result['finalMarkerType'];
+        }
+        // ----------------------------------------------------------------
+
         if (description != null || imageUrl != null) {
           if (context.mounted) {
             await addMarkerAndShowNotification(
               context: context,
-              makerType: _selectedIncident,
+              makerType: typeToSave, // Usamos la variable local corregida
               latitude: targetLatitude,
               longitude: targetLongitude,
               description: description,
               imageUrl: imageUrl,
               contactInfo: contactInfo,
-              district: district, // Pass
-              city: city, // Pass
-              country: country, // Pass
+              district: district,
+              city: city,
+              country: country,
             );
           }
         } else {
@@ -209,7 +215,6 @@ class MarkerManager {
     required AppLocalizations localizations,
     required double? targetLatitude,
     required double? targetLongitude,
-    // NEW Location params
     String? district,
     String? city,
     String? country,
@@ -227,19 +232,27 @@ class MarkerManager {
         final String? description = result['description'];
         final String? imageUrl = result['imageUrl'];
 
+        // Para emergencias, también podríamos verificar si hubo cambio,
+        // aunque es menos común cambiar desde emergencia a otra cosa.
+        MakerType typeToSave = MakerType.emergency;
+        if (result.containsKey('finalMarkerType') &&
+            result['finalMarkerType'] is MakerType) {
+          typeToSave = result['finalMarkerType'];
+        }
+
         if (description != null || imageUrl != null) {
           if (context.mounted) {
             await addMarkerAndShowNotification(
               context: context,
-              makerType: MakerType.emergency,
+              makerType: typeToSave,
               latitude: targetLatitude,
               longitude: targetLongitude,
               description:
                   description ?? localizations.incidentModalStatusError,
               imageUrl: imageUrl,
-              district: district, // Pass
-              city: city, // Pass
-              country: country, // Pass
+              district: district,
+              city: city,
+              country: country,
             );
           }
         } else {

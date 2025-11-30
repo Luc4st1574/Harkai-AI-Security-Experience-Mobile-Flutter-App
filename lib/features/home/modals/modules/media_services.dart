@@ -1,3 +1,5 @@
+// lib/features/home/modals/modules/media_services.dart
+
 import 'dart:async';
 import 'dart:io';
 
@@ -8,6 +10,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 // SERVICES
 import 'package:harkai/core/services/storage_service.dart';
 import 'package:harkai/core/services/speech_service.dart';
+import 'package:harkai/features/home/utils/extensions.dart'; // Asegúrate de tener esto
 
 class IncidentMediaServices {
   final SpeechPermissionService _speechPermissionService;
@@ -16,13 +19,13 @@ class IncidentMediaServices {
       : _speechPermissionService = SpeechPermissionService();
 
   // --- CONFIGURACIÓN E INICIALIZACIÓN DEL MODELO GEMINI (Vertex AI) ---
-
   GenerativeModel get _model {
     final vertexAI = FirebaseAI.vertexAI(location: 'us-central1');
     return vertexAI.generativeModel(
       model: 'gemini-2.5-flash',
       generationConfig: GenerationConfig(
-        temperature: 0.7,
+        temperature:
+            0.4, // Temperatura baja para respuestas más "robóticas" y precisas
         maxOutputTokens: 800,
       ),
       safetySettings: [
@@ -38,38 +41,29 @@ class IncidentMediaServices {
     );
   }
 
-  // --- Lógica de Instrucción Consolidada (Prompting) ---
-
+  // --- Lógica de Instrucción (Prompting) ---
   String _generateAiInstruction({
     required String incidentTypeName,
     required String specificInstruction,
     required String responseFormats,
   }) {
-    const incidentContext =
-        "On the theft incident type, this includes all kinds of theft, robbery, or burglary. even car theft and armed robbery all kinds of theft, robbery, or burglary please be conscious of this and if it as a theft incident do always a good check. "
-        "On the crash incident type, this includes all kinds of car accidents, motorcycle accidents, and pedestrian accidents. "
-        "On the fire incident type, this includes all kinds of fires, explosions, or smoke. "
-        "On the emergency incident type, this includes all kinds of emergencies, like medical emergencies, natural disasters, or other urgent situations, lesions and all related this is a incident type that must be open to a lot of posible thing so be conscius of all kind of possible emergencies. "
-        "On the places incident type, this is for addding businesses, stores,parks,plazas,malls and so on to the map, this is not for incidents but for adding places to the map so be conscious of this and do not use it for incidents, here just add what the user tells you do not try to give it more context or description cause it will look weird, just repeat what the user says on this kind incident do not add anything else, IMAGES like logos are acepeted too. "
-        "On the event incident type, this includes community gatherings, parties, concerts, protests, cultural events, sports matches, or any public or private scheduled activity. This is for reporting social things happening now or planned. ";
+    const incidentContext = "CONTEXT: Analyze security reports. "
+        "Types: THEFT (robbery, stealing), CRASH (accidents), FIRE (smoke, explosion), "
+        "EMERGENCY (medical, natural disaster), EVENT (parties, protests), "
+        "PLACE (adding a business/park/store to map - NOT an incident).";
 
-    // UPDATED SPANISH LOGIC
     const languageInstruction =
-        "STRICT LANGUAGE RULE: Analyze the input (audio, text, or image details). If the user speaks Spanish, writes in Spanish, or uses ANY Spanish words/slang: "
-        "1. The DESCRIPTION/CONTENT of your response MUST be in Spanish. "
-        "2. The SYSTEM KEYWORDS ('MATCH', 'MISMATCH', 'UNCLEAR', 'INAPPROPRIATE') MUST remain in English for code parsing. "
-        "Example of correct Spanish response: 'MATCH: Se ha reportado un robo a mano armada en la tienda.' "
-        "Do NOT translate the keywords (MATCH/MISMATCH) to Spanish. Do NOT write the description in English if the input is Spanish.";
+        "LANGUAGE: If input is Spanish, description MUST be Spanish. "
+        "KEYWORDS (MATCH, MISMATCH, UNCLEAR) MUST be English.";
 
-    return "Incident Type: '$incidentTypeName'. Process the following media. "
+    return "Intent: Report '$incidentTypeName'. "
         "$incidentContext "
-        "Expected response formats: $responseFormats "
         "$languageInstruction "
+        "RESPONSE FORMATS: $responseFormats "
         "$specificInstruction";
   }
 
   // --- Permission Service ---
-
   Future<PermissionStatus> getMicrophonePermissionStatus() async {
     return await Permission.microphone.status;
   }
@@ -81,125 +75,94 @@ class IncidentMediaServices {
   }
 
   // --- Initialization ---
-
   GenerativeModel initializeGeminiModel() {
     return _model;
   }
 
-  // --- Analysis Methods (Implementación Directa) ---
+  // --- Analysis Methods ---
 
-  /// Envía datos de audio al modelo Gemini.
   Future<String?> analyzeAudioWithGemini({
     required Uint8List audioBytes,
     required String audioMimeType,
     required String incidentTypeName,
   }) async {
-    const specificInstruction = "Analyze the audio provided below.";
-    const responseFormats =
-        "'MATCH: [Short summary, max 15 words, of the audio content related to the incident type.]', "
-        "'MISMATCH: This audio seems to describe a [Correct Incident Type] incident. Please confirm this type or re-record for the \$incidentTypeName incident.', "
-        "'UNCLEAR: The audio was not clear enough or did not describe a reportable incident for '\$incidentTypeName'. Please try recording again with more details.'";
+    // FORMATO SIMPLIFICADO PARA DETECCIÓN AUTOMÁTICA
+    const responseFormats = "1. 'MATCH: [Summary]'\n"
+        "2. 'MISMATCH: [SUGGESTED_TYPE]' (Example: 'MISMATCH: Fire', 'MISMATCH: Theft')\n"
+        "3. 'UNCLEAR: [Reason]'";
 
     final audioInstruction = _generateAiInstruction(
       incidentTypeName: incidentTypeName,
-      specificInstruction: specificInstruction,
-      responseFormats:
-          responseFormats.replaceAll('\$incidentTypeName', incidentTypeName),
+      specificInstruction: "Analyze audio content.",
+      responseFormats: responseFormats,
     );
 
     try {
       final response = await _model.generateContent([
         Content.text(audioInstruction),
-        Content.inlineData(
-          audioMimeType,
-          audioBytes,
-        ),
+        Content.inlineData(audioMimeType, audioBytes),
       ]);
-      return response.text;
+      return response.text?.trim();
     } catch (e) {
-      debugPrint("AnalyzeAudio failed: ${e.toString()}");
+      debugPrint("AnalyzeAudio failed: $e");
       return null;
     }
   }
 
-  /// Envía texto al modelo Gemini.
   Future<String?> analyzeTextWithGemini({
     required String text,
     required String incidentTypeName,
   }) async {
-    if (text.isEmpty) {
-      debugPrint("IncidentMediaServices: Text input is empty.");
-      return null;
-    }
+    if (text.isEmpty) return null;
 
-    const specificInstruction = "Analyze the text provided below.";
-    const responseFormats =
-        "'MATCH: [Short summary, max 15 words, of the text content related to the incident type.]', "
-        "'MISMATCH: This text seems to describe a [Correct Incident Type] incident. Please confirm this type or re-enter for the \$incidentTypeName incident.', "
-        "'UNCLEAR: The text was not clear enough or did not describe a reportable incident for '\$incidentTypeName'. Please try entering again with more details.'";
+    const responseFormats = "1. 'MATCH: [Summary]'\n"
+        "2. 'MISMATCH: [SUGGESTED_TYPE]' (Example: 'MISMATCH: Crash')\n"
+        "3. 'UNCLEAR: [Reason]'";
 
     final textInstruction = _generateAiInstruction(
       incidentTypeName: incidentTypeName,
-      specificInstruction: specificInstruction,
-      responseFormats:
-          responseFormats.replaceAll('\$incidentTypeName', incidentTypeName),
+      specificInstruction: "Analyze text content.",
+      responseFormats: responseFormats,
     );
 
-    final userPromptWithInstruction = "$textInstruction\n\nUser Input: $text";
+    final userPrompt = "$textInstruction\n\nUser Input: $text";
 
     try {
-      final response = await _model.generateContent([
-        Content.text(userPromptWithInstruction),
-      ]);
-      return response.text;
+      final response = await _model.generateContent([Content.text(userPrompt)]);
+      return response.text?.trim();
     } catch (e) {
-      debugPrint("AnalyzeText failed: ${e.toString()}");
       return null;
     }
   }
 
-  /// Envía datos de imagen al modelo Gemini.
   Future<String?> analyzeImageWithGemini({
     required Uint8List imageBytes,
     required String imageMimeType,
     required String incidentTypeName,
   }) async {
-    const specificInstruction = "Analyze the image provided below.";
-
-    const imageSafetyInstruction =
-        "1. SAFETY: If image contains explicit sexual content or excessive gore, respond EXACTLY with 'INAPPROPRIATE: The image contains content that cannot be posted.'. "
-        "2. RELEVANCE (If safe): Does image genuinely match the Incident Type? ";
-
-    // ADDED 'Event' to the list of valid other types in MISMATCH
-    const responseFormats =
-        "IF MATCHES INCIDENT TYPE: Respond EXACTLY 'MATCH:'. "
-        "IF MISMATCH (but valid other type like Fire, Crash, Theft, Pet, Emergency, Event): Respond EXACTLY 'MISMATCH: This image looks more like a [Correct Incident Type] alert. Please confirm this type or retake image for \$incidentTypeName incident.'. "
-        "IF IRRELEVANT/UNCLEAR: Respond EXACTLY 'UNCLEAR: The image is not clear enough or does not seem to describe a reportable incident for '\$incidentTypeName'. Please try retaking the picture.'.";
+    const responseFormats = "1. 'MATCH:' (If relevant)\n"
+        "2. 'MISMATCH: [SUGGESTED_TYPE]' (Example: 'MISMATCH: Event')\n"
+        "3. 'UNCLEAR: [Reason]'\n"
+        "4. 'INAPPROPRIATE: [Reason]'";
 
     final imageInstruction = _generateAiInstruction(
       incidentTypeName: incidentTypeName,
-      specificInstruction: "${imageSafetyInstruction}$specificInstruction",
-      responseFormats:
-          responseFormats.replaceAll('\$incidentTypeName', incidentTypeName),
+      specificInstruction: "Check safety first, then relevance.",
+      responseFormats: responseFormats,
     );
 
     try {
       final response = await _model.generateContent([
         Content.text(imageInstruction),
-        Content.inlineData(
-          imageMimeType,
-          imageBytes,
-        ),
+        Content.inlineData(imageMimeType, imageBytes),
       ]);
-      return response.text;
+      return response.text?.trim();
     } catch (e) {
-      debugPrint("AnalyzeImage failed: ${e.toString()}");
       return null;
     }
   }
 
   // --- Storage Service ---
-
   Future<String?> uploadIncidentImage({
     required StorageService storageService,
     required File imageFile,
@@ -213,8 +176,6 @@ class IncidentMediaServices {
         incidentType: incidentType,
       );
     } catch (e) {
-      debugPrint(
-          "IncidentMediaServices: Failed to upload image via StorageService: ${e.toString()}");
       return null;
     }
   }
