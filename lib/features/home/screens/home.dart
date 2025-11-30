@@ -1,3 +1,5 @@
+// lib/features/home/screens/home.dart
+// ... [Existing imports remain unchanged] ...
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,11 +15,11 @@ import '../../../core/services/phone_service.dart';
 import '../../../core/services/speech_service.dart';
 import '../../../core/services/notification_service.dart';
 
-// Utils (Models and Map Utilities)
+// Utils
 import '../utils/incidences.dart';
 import '../utils/markers.dart';
 
-// Widgets for this screen
+// Widgets
 import '../widgets/header.dart';
 import '../widgets/map.dart';
 import '../widgets/incident_buttons.dart';
@@ -39,6 +41,7 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
+  // ... [Services declaration same as before] ...
   final LocationService _locationService = LocationService();
   final FirestoreService _firestoreService = FirestoreService();
   final PhoneService _phoneService = PhoneService();
@@ -101,6 +104,7 @@ class _HomeState extends State<Home> {
     }
   }
 
+  // ... [_initializeAndCheckOnboarding, _initializeScreenData, _requestInitialPermissions, _checkFirstLaunch, _showAlwaysOnLocationExplanationModal, dispose, _prepareMapMarkers, _getDisplayMarkers, _getMarkersForBigMapModal, _getCirclesForDisplay, _getCirclesForBigMapModal remain the same] ...
   Future<void> _initializeAndCheckOnboarding() async {
     await _initializeScreenData();
     await _checkFirstLaunch();
@@ -282,6 +286,7 @@ class _HomeState extends State<Home> {
         .toSet();
   }
 
+  // UPDATED: Now passes location data
   Future<void> _handleIncidentButtonPressed(MakerType markerType) async {
     if (!mounted || _localizations == null) return;
 
@@ -304,6 +309,10 @@ class _HomeState extends State<Home> {
       newMarkerToSelect: markerType,
       targetLatitude: _mapLocationManager.targetLatitude,
       targetLongitude: _mapLocationManager.targetLongitude,
+      // Pass location details
+      district: _mapLocationManager.currentDistrict,
+      city: _mapLocationManager.currentCity,
+      country: _mapLocationManager.currentCountry,
     );
   }
 
@@ -314,8 +323,6 @@ class _HomeState extends State<Home> {
       return;
     }
 
-    debugPrint(
-        "Button long pressed: ${markerType.name}. Navigating to IncidentScreen.");
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -327,6 +334,7 @@ class _HomeState extends State<Home> {
     );
   }
 
+  // UPDATED: Now passes location data
   Future<void> _handleEmergencyButtonPressed() async {
     if (!mounted || _localizations == null) return;
     await _dataEventManager.processEmergencyReporting(
@@ -334,11 +342,16 @@ class _HomeState extends State<Home> {
       localizations: _localizations!,
       targetLatitude: _mapLocationManager.targetLatitude,
       targetLongitude: _mapLocationManager.targetLongitude,
+      // Pass location details
+      district: _mapLocationManager.currentDistrict,
+      city: _mapLocationManager.currentCity,
+      country: _mapLocationManager.currentCountry,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // ... [Build method remains largely the same] ...
     _localizations ??= AppLocalizations.of(context)!;
     if (_localizations == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -410,14 +423,11 @@ class _HomeState extends State<Home> {
           Align(
             alignment: Alignment.bottomCenter,
             child: DraggableScrollableSheet(
-              // Keeps handle + part of theft/fire button visible
               initialChildSize: 0.10,
               minChildSize: 0.10,
-              // REDUCED from 0.65 to 0.6 to remove extra bottom whitespace
-              // This is enough space for your buttons without being too tall
               maxChildSize: 0.5,
               expand: false,
-              snap: true, // Added snap so it settles nicely at min or max
+              snap: true,
               builder:
                   (BuildContext context, ScrollController scrollController) {
                 return Container(
@@ -442,13 +452,11 @@ class _HomeState extends State<Home> {
                       physics: const ClampingScrollPhysics(),
                       shrinkWrap: true,
                       slivers: [
-                        // Pinned Handle
                         SliverAppBar(
                           backgroundColor: Colors.white,
                           automaticallyImplyLeading: false,
                           elevation: 0,
                           pinned: true,
-                          // REDUCED from 20 to 16 to tighten the top area
                           toolbarHeight: 16,
                           flexibleSpace: Center(
                             child: Container(
@@ -462,13 +470,8 @@ class _HomeState extends State<Home> {
                             ),
                           ),
                         ),
-
-                        // Content
                         SliverToBoxAdapter(
                           child: Padding(
-                            // CHANGED:
-                            // Top: 8 (was 24) -> Pulls buttons closer to the line
-                            // Bottom: 20 (was 12) -> adds a little breathing room for the last button
                             padding: const EdgeInsets.fromLTRB(0, 8, 0, 20),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,

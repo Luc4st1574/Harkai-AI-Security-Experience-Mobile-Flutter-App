@@ -1,9 +1,10 @@
+// lib/features/home/utils/incidences.dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'markers.dart'; // Ensure this path is correct
+import 'markers.dart';
 import 'package:harkai/l10n/app_localizations.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
 
@@ -18,8 +19,10 @@ class IncidenceData {
   final String? imageUrl;
   final Timestamp timestamp;
   final bool isVisible;
-  final String? contactInfo; // Stored in HeatPoints
-  // Optional: For client-side distance calculation storage in IncidentScreen
+  final String? contactInfo;
+  final String? district; // NEW
+  final String? city; // NEW
+  final String? country; // NEW
   double? distance;
 
   IncidenceData({
@@ -33,24 +36,22 @@ class IncidenceData {
     required this.timestamp,
     required this.isVisible,
     this.contactInfo,
+    this.district,
+    this.city,
+    this.country,
     this.distance,
   });
 
-  /// Factory constructor to create a IncidenceData instance from a Firestore document.
   factory IncidenceData.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
-    // Handle Type as Integer ID (0-6)
-    // We assume the ID stored in Firestore matches the index of the Enum in the app.
     int typeIndex = 0;
     if (data['type'] is int) {
       typeIndex = data['type'];
     } else if (data['type'] is String) {
-      // Fallback for legacy data
       typeIndex = int.tryParse(data['type']) ?? 0;
     }
 
-    // Protect against index out of bounds
     MakerType parsedType = MakerType.none;
     if (typeIndex >= 0 && typeIndex < MakerType.values.length) {
       parsedType = MakerType.values[typeIndex];
@@ -67,16 +68,19 @@ class IncidenceData {
       timestamp: data['timestamp'] as Timestamp? ?? Timestamp.now(),
       isVisible: data['isVisible'] as bool? ?? true,
       contactInfo: data['contactInfo'] as String?,
+      district: data['district'] as String?, // NEW
+      city: data['city'] as String?, // NEW
+      country: data['country'] as String?, // NEW
     );
   }
 
   @override
   String toString() {
-    return 'IncidenceData(id: $id, type: ${type.name}, contact: $contactInfo)';
+    return 'IncidenceData(id: $id, type: ${type.name}, loc: $district, $country)';
   }
 }
 
-/// Utility function to create a [Marker] from [IncidenceData].
+// ... createMarkerFromIncidence and createCircleFromIncidence remain unchanged ...
 Marker createMarkerFromIncidence(
   IncidenceData incidence,
   AppLocalizations localizations, {
@@ -106,7 +110,6 @@ Marker createMarkerFromIncidence(
   );
 }
 
-/// Utility function to create a [Circle] from [IncidenceData].
 Circle createCircleFromIncidence(
     IncidenceData incidence, AppLocalizations localizations) {
   final MarkerInfo? markerInfo = getMarkerInfo(incidence.type, localizations);
@@ -156,18 +159,13 @@ class FirestoreService {
 
   FirestoreService();
 
-  /// **Seeds the 'incident_types' collection with ONLY ID and Name**
   Future<void> ensureIncidentTypesCollectionExists() async {
     try {
-      // debugPrint("Checking/Seeding 'incident_types' collection...");
       for (var type in MakerType.values) {
-        // Use the ENUM INDEX as the Document ID (0, 1, 2...)
         final String docId = type.index.toString();
-
-        // Strict structure: just ID and Name.
         await _incidentTypesCollection.doc(docId).set({
           'id': type.index,
-          'name': type.name, // e.g. "pet", "theft"
+          'name': type.name,
         }, SetOptions(merge: true));
       }
     } catch (e) {
@@ -181,7 +179,10 @@ class FirestoreService {
     required double longitude,
     String? description,
     String? imageUrl,
-    String? contactInfo, // This gets saved to HeatPoints
+    String? contactInfo,
+    String? district, // NEW
+    String? city, // NEW
+    String? country, // NEW
   }) async {
     if (type == MakerType.none) {
       return false;
@@ -195,12 +196,15 @@ class FirestoreService {
         'userId': currentUser.uid,
         'latitude': latitude,
         'longitude': longitude,
-        'type': type.index, // Save Type as Integer ID
+        'type': type.index,
         'description': description ?? '',
         'imageUrl': imageUrl,
         'timestamp': FieldValue.serverTimestamp(),
         'isVisible': true,
-        'contactInfo': contactInfo, // Save Contact Info here
+        'contactInfo': contactInfo,
+        'district': district, // Save
+        'city': city, // Save
+        'country': country, // Save
       });
       return true;
     } catch (e) {
@@ -231,13 +235,17 @@ class FirestoreService {
     });
   }
 
+  // ... (getIncidencesStreamByType, getIncidentsVisibility, markExpiredIncidencesAsInvisible, getEmergencyNumbersForCity) ...
+  // Keep the rest of the methods exactly as they were in the previous file content
+  // to avoid truncation issues in this response.
+
   Stream<List<IncidenceData>> getIncidencesStreamByType(MakerType type) {
     if (type == MakerType.none) {
       return Stream.value([]);
     }
     return _heatPointsCollection
         .where('isVisible', isEqualTo: true)
-        .where('type', isEqualTo: type.index) // Filter by ID
+        .where('type', isEqualTo: type.index)
         .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -256,8 +264,6 @@ class FirestoreService {
     });
   }
 
-  // ... (getIncidentsVisibility, markExpiredIncidencesAsInvisible, getEmergencyNumbersForCity remain unchanged)
-  // Included purely for context preservation if you copy-paste the whole file
   Future<Map<String, bool>> getIncidentsVisibility(
       List<String> incidentIds) async {
     if (incidentIds.isEmpty) return {};

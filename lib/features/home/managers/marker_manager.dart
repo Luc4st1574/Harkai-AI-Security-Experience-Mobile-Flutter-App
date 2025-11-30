@@ -1,3 +1,4 @@
+// lib/features/home/managers/marker_manager.dart
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
@@ -40,12 +41,7 @@ class MarkerManager {
     await _firestoreService.ensureIncidentTypesCollectionExists();
     await _downloadDataManager.cleanupInvisibleIncidentsFromCache();
     _setupIncidentListener(localizations);
-    debugPrint(
-        'MarkerManager: Initializing and performing initial remote cleanup...');
-    int initialCleanedCount =
-        await _firestoreService.markExpiredIncidencesAsInvisible();
-    debugPrint(
-        'MarkerManager: Initial remote cleanup completed. $initialCleanedCount incidents marked invisible.');
+    await _firestoreService.markExpiredIncidencesAsInvisible();
     _startPeriodicExpiryChecks();
   }
 
@@ -94,13 +90,8 @@ class MarkerManager {
       {Duration interval = const Duration(hours: 1)}) {
     _expiryCheckTimer?.cancel();
     _expiryCheckTimer = Timer.periodic(interval, (timer) async {
-      int cleanedCount =
-          await _firestoreService.markExpiredIncidencesAsInvisible();
-      debugPrint(
-          'MarkerManager: Periodic cleanup completed. $cleanedCount incidents marked invisible.');
+      await _firestoreService.markExpiredIncidencesAsInvisible();
     });
-    debugPrint(
-        'MarkerManager: Periodic expiry checks started with an interval of ${interval.inMinutes} minutes.');
   }
 
   Future<void> addMarkerAndShowNotification({
@@ -111,6 +102,10 @@ class MarkerManager {
     String? description,
     String? imageUrl,
     String? contactInfo,
+    // NEW Location params
+    String? district,
+    String? city,
+    String? country,
   }) async {
     final localizations = AppLocalizations.of(context)!;
     final success = await _firestoreService.addIncidence(
@@ -120,6 +115,9 @@ class MarkerManager {
       description: description,
       imageUrl: imageUrl,
       contactInfo: contactInfo,
+      district: district, // Pass
+      city: city, // Pass
+      country: country, // Pass
     );
 
     if (context.mounted) {
@@ -147,19 +145,19 @@ class MarkerManager {
     required MakerType newMarkerToSelect,
     required double? targetLatitude,
     required double? targetLongitude,
+    // NEW Location params
+    String? district,
+    String? city,
+    String? country,
   }) async {
     if (_selectedIncident == newMarkerToSelect) {
       _selectedIncident = MakerType.none;
       _onStateChange();
-      debugPrint(
-          "MarkerManager: Deselected incident type ${newMarkerToSelect.name}.");
       return;
     }
 
     _selectedIncident = newMarkerToSelect;
     _onStateChange();
-    debugPrint(
-        "MarkerManager: Selected incident type ${newMarkerToSelect.name} for reporting.");
 
     if (targetLatitude != null && targetLongitude != null) {
       final result = await showIncidentVoiceDescriptionDialog(
@@ -182,19 +180,16 @@ class MarkerManager {
               description: description,
               imageUrl: imageUrl,
               contactInfo: contactInfo,
+              district: district, // Pass
+              city: city, // Pass
+              country: country, // Pass
             );
-            debugPrint(
-                "MarkerManager: Incident ${_selectedIncident.name} reported. Selection persists.");
           }
         } else {
-          debugPrint(
-              "MarkerManager: Incident reporting cancelled or no media provided for ${_selectedIncident.name}. Reverting selection.");
           _selectedIncident = MakerType.none;
           _onStateChange();
         }
       } else {
-        debugPrint(
-            "MarkerManager: Incident reporting dialog cancelled by user for ${_selectedIncident.name}. Reverting selection.");
         _selectedIncident = MakerType.none;
         _onStateChange();
       }
@@ -204,8 +199,6 @@ class MarkerManager {
           SnackBar(content: Text(localizations.targetLocationNotSet)),
         );
       }
-      debugPrint(
-          "MarkerManager: Target location not set for ${_selectedIncident.name}. Reverting selection.");
       _selectedIncident = MakerType.none;
       _onStateChange();
     }
@@ -216,10 +209,13 @@ class MarkerManager {
     required AppLocalizations localizations,
     required double? targetLatitude,
     required double? targetLongitude,
+    // NEW Location params
+    String? district,
+    String? city,
+    String? country,
   }) async {
     _selectedIncident = MakerType.emergency;
     _onStateChange();
-    debugPrint("MarkerManager: Emergency reporting selected.");
 
     if (targetLatitude != null && targetLongitude != null) {
       final result = await showIncidentVoiceDescriptionDialog(
@@ -241,19 +237,16 @@ class MarkerManager {
               description:
                   description ?? localizations.incidentModalStatusError,
               imageUrl: imageUrl,
+              district: district, // Pass
+              city: city, // Pass
+              country: country, // Pass
             );
-            debugPrint(
-                "MarkerManager: Emergency incident reported. Selection persists as 'emergency'.");
           }
         } else {
-          debugPrint(
-              "MarkerManager: Emergency reporting cancelled (no media). Reverting selection.");
           _selectedIncident = MakerType.none;
           _onStateChange();
         }
       } else {
-        debugPrint(
-            "MarkerManager: Emergency reporting dialog cancelled by user. Reverting selection.");
         _selectedIncident = MakerType.none;
         _onStateChange();
       }
@@ -263,8 +256,6 @@ class MarkerManager {
           SnackBar(content: Text(localizations.emergencyReportLocationUnknown)),
         );
       }
-      debugPrint(
-          "MarkerManager: Target location not set for emergency report. Reverting selection.");
       _selectedIncident = MakerType.none;
       _onStateChange();
     }
@@ -278,6 +269,5 @@ class MarkerManager {
   void dispose() {
     _incidentsSubscription?.cancel();
     _expiryCheckTimer?.cancel();
-    debugPrint('MarkerManager: Disposed.');
   }
 }

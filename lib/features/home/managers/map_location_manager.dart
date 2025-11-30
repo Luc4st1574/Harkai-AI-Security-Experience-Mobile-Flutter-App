@@ -1,3 +1,4 @@
+// lib/features/home/managers/map_location_manager.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geolocator;
@@ -5,33 +6,33 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../core/services/location_service.dart';
 import '../modals/enlarged_map.dart';
 import 'package:harkai/l10n/app_localizations.dart';
-import 'package:permission_handler/permission_handler.dart' as perm_handler; // Added import
+import 'package:permission_handler/permission_handler.dart' as perm_handler;
 
-typedef AlwaysOnLocationPromptCallback = Future<bool> Function(BuildContext context, AppLocalizations localizations); // NEW
+typedef AlwaysOnLocationPromptCallback = Future<bool> Function(
+    BuildContext context, AppLocalizations localizations);
 
 class MapLocationManager {
   final LocationService _locationService;
   final VoidCallback _onStateChange;
   final GoogleMapController? Function() _getMapController;
   final Function(GoogleMapController) _setMapController;
-  final AlwaysOnLocationPromptCallback? onShowAlwaysOnLocationPrompt; // Made optional
+  final AlwaysOnLocationPromptCallback? onShowAlwaysOnLocationPrompt;
 
-  // --- FIX: Change the initial state to be a unique loading key ---
-  // This ensures the very first time the UI builds, it shows a loading message.
   static const String _initialStateKey = 'harkai_initial_loading';
-  String _locationData = _initialStateKey;
-  bool _isErrorOrStatus = true; // The initial state is a "status"
+  // Stores the detailed address info instead of just a string
+  AddressInfo? _currentAddressInfo;
+  // Used for status messages (errors, loading) if _currentAddressInfo is null
+  String _statusMessage = _initialStateKey;
+  bool _isErrorOrStatus = true;
 
   double? _latitude;
   double? _longitude;
   double? _targetLatitude;
   double? _targetLongitude;
 
-  // For dynamic address updates
   double? _lastGeocodedLatitude;
   double? _lastGeocodedLongitude;
-  // Threshold in meters to trigger a new address lookup
-  static const double _addressUpdateDistanceThreshold = 500.0; // 500 meters
+  static const double _addressUpdateDistanceThreshold = 500.0;
   static const double maxMarkerMoveDistance = 300.0;
 
   StreamSubscription<geolocator.Position>? _positionStreamSubscription;
@@ -42,96 +43,100 @@ class MapLocationManager {
   double? get targetLatitude => _targetLatitude;
   double? get targetLongitude => _targetLongitude;
   BitmapDescriptor? get targetPinDot => _targetPinDot;
-  LatLng? get initialCameraPosition => _targetLatitude != null && _targetLongitude != null
-      ? LatLng(_targetLatitude!, _targetLongitude!)
-      : (_latitude != null && _longitude != null ? LatLng(_latitude!, _longitude!) : null);
+  LatLng? get initialCameraPosition =>
+      _targetLatitude != null && _targetLongitude != null
+          ? LatLng(_targetLatitude!, _targetLongitude!)
+          : (_latitude != null && _longitude != null
+              ? LatLng(_latitude!, _longitude!)
+              : null);
 
   String? get currentCityName {
-    if (!_isErrorOrStatus && _locationData.isNotEmpty) {
-      return _locationData.split(',').first.trim();
-    }
-    return null;
+    return _currentAddressInfo?.city ??
+        _currentAddressInfo?.displayText.split(',').first.trim();
   }
-  
+
+  // --- NEW GETTERS for detailed location info ---
+  String? get currentDistrict => _currentAddressInfo?.district;
+  String? get currentCity => _currentAddressInfo?.city;
+  String? get currentCountry => _currentAddressInfo?.country;
+
   MapLocationManager({
     required LocationService locationService,
     required VoidCallback onStateChange,
     required GoogleMapController? Function() getMapController,
     required Function(GoogleMapController) setMapController,
-    this.onShowAlwaysOnLocationPrompt, // Made optional
+    this.onShowAlwaysOnLocationPrompt,
   })  : _locationService = locationService,
         _onStateChange = onStateChange,
         _getMapController = getMapController,
         _setMapController = setMapController;
 
-  // --- FIX: Update this method to handle the new initial state ---
   String getLocalizedLocationText(AppLocalizations localizations) {
-    // If we are in the initial loading state, always show the "getting initial location" message.
-    if (_locationData == _initialStateKey) {
+    if (_statusMessage == _initialStateKey && _currentAddressInfo == null) {
       return localizations.mapinitialFetchingLocation;
     }
 
     if (_isErrorOrStatus) {
-      switch (_locationData) {
-        case 'loading': 
+      switch (_statusMessage) {
+        case 'loading':
           return localizations.mapLoadingLocation;
         case 'fetching':
           return localizations.mapFetchingLocation;
         default:
-          if (_locationData == localizations.mapinitialFetchingLocation) return localizations.mapinitialFetchingLocation;
-          if (_locationData == localizations.mapCouldNotFetchAddress) return localizations.mapCouldNotFetchAddress;
-          if (_locationData == localizations.mapFailedToGetInitialLocation) return localizations.mapFailedToGetInitialLocation;
-          if (_locationData == localizations.mapLocationServicesDisabled) return localizations.mapLocationServicesDisabled;
-          if (_locationData == localizations.mapLocationPermissionDenied) return localizations.mapLocationPermissionDenied;
-          
-          if (_locationData.startsWith("Error:") || _locationData.startsWith("Failed:")) {
-            return _locationData; 
+          if (_statusMessage == localizations.mapinitialFetchingLocation)
+            return localizations.mapinitialFetchingLocation;
+          if (_statusMessage == localizations.mapCouldNotFetchAddress)
+            return localizations.mapCouldNotFetchAddress;
+          if (_statusMessage == localizations.mapFailedToGetInitialLocation)
+            return localizations.mapFailedToGetInitialLocation;
+          if (_statusMessage == localizations.mapLocationServicesDisabled)
+            return localizations.mapLocationServicesDisabled;
+          if (_statusMessage == localizations.mapLocationPermissionDenied)
+            return localizations.mapLocationPermissionDenied;
+
+          if (_statusMessage.startsWith("Error:") ||
+              _statusMessage.startsWith("Failed:")) {
+            return _statusMessage;
           }
           return localizations.mapCouldNotFetchAddress;
       }
     }
-    return localizations.mapYouAreIn(_locationData.isNotEmpty ? _locationData : localizations.mapCouldNotFetchAddress);
+
+    // Use the display text from the AddressInfo
+    return localizations.mapYouAreIn(_currentAddressInfo?.displayText ??
+        localizations.mapCouldNotFetchAddress);
   }
 
-  Future<void> initializeManager(BuildContext context, AppLocalizations localizations) async {
+  Future<void> initializeManager(
+      BuildContext context, AppLocalizations localizations) async {
     await _loadCustomTargetIcon();
-    
-    // 1. Request foreground permission
-    bool foregroundPermissionGranted = await _locationService.requestForegroundLocationPermission(openSettingsOnError: true);
+
+    bool foregroundPermissionGranted = await _locationService
+        .requestForegroundLocationPermission(openSettingsOnError: true);
     if (!foregroundPermissionGranted) {
-      _locationData = localizations.mapLocationPermissionDenied;
+      _statusMessage = localizations.mapLocationPermissionDenied;
       _isErrorOrStatus = true;
       _onStateChange();
-      debugPrint("MapLocationManager: Foreground location permission denied. Cannot proceed with map.");
-      return; // Cannot proceed without foreground location
+      debugPrint(
+          "MapLocationManager: Foreground location permission denied. Cannot proceed with map.");
+      return;
     }
 
-    // 2. If foreground is granted, check background status and prompt if needed
     var backgroundStatus = await perm_handler.Permission.locationAlways.status;
-    if (backgroundStatus != perm_handler.PermissionStatus.granted && 
+    if (backgroundStatus != perm_handler.PermissionStatus.granted &&
         backgroundStatus != perm_handler.PermissionStatus.permanentlyDenied) {
-      debugPrint("MapLocationManager: Background location not yet granted. Showing explanation modal.");
-      // ADDED NULL CHECK HERE
-      if (onShowAlwaysOnLocationPrompt != null) { 
-        bool userAcceptedExplanation = await onShowAlwaysOnLocationPrompt!(context, localizations); 
-      
+      if (onShowAlwaysOnLocationPrompt != null) {
+        bool userAcceptedExplanation =
+            await onShowAlwaysOnLocationPrompt!(context, localizations);
+
         if (userAcceptedExplanation) {
-          debugPrint("MapLocationManager: User accepted explanation. Requesting background location permission.");
-          await _locationService.requestBackgroundLocationPermission(openSettingsOnError: true);
-        } else {
-          debugPrint("MapLocationManager: User declined explanation modal. Proceeding without always-on permission.");
+          await _locationService.requestBackgroundLocationPermission(
+              openSettingsOnError: true);
         }
-      } else {
-        debugPrint("MapLocationManager: No always-on location prompt callback provided. Skipping explanation.");
       }
-    } else {
-      debugPrint("MapLocationManager: Background location already granted or permanently denied. Skipping explanation modal.");
     }
 
-    // 3. Fetch initial location and address (now that permissions are handled)
-    await _fetchInitialLocationAndAddress(localizations); 
-    
-    // 4. Setup continuous location updates
+    await _fetchInitialLocationAndAddress(localizations);
     _setupLocationUpdatesListener(localizations);
   }
 
@@ -143,14 +148,16 @@ class MapLocationManager {
       );
     } catch (e) {
       debugPrint('Error loading custom target icon: $e');
-      _targetPinDot = BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
+      _targetPinDot =
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
     }
     _onStateChange();
   }
 
-  Future<void> _fetchInitialLocationAndAddress(AppLocalizations localizations, {bool isUpdate = false}) async {
+  Future<void> _fetchInitialLocationAndAddress(AppLocalizations localizations,
+      {bool isUpdate = false}) async {
     if (!isUpdate) {
-      _locationData = localizations.mapinitialFetchingLocation;
+      _statusMessage = localizations.mapinitialFetchingLocation;
       _isErrorOrStatus = true;
       _onStateChange();
 
@@ -162,39 +169,44 @@ class MapLocationManager {
         _targetLatitude = _latitude;
         _targetLongitude = _longitude;
 
-        final addressResult = await _locationService.getAddressFromCoordinates(_latitude!, _longitude!);
+        final addressResult = await _locationService.getAddressFromCoordinates(
+            _latitude!, _longitude!);
+
         if (addressResult.success && addressResult.data != null) {
-          _locationData = addressResult.data!;
+          _currentAddressInfo = addressResult.data;
           _isErrorOrStatus = false;
           _lastGeocodedLatitude = _latitude;
           _lastGeocodedLongitude = _longitude;
         } else {
-          _locationData = localizations.mapCouldNotFetchAddress;
+          _statusMessage = localizations.mapCouldNotFetchAddress;
           _isErrorOrStatus = true;
-          debugPrint("getAddressFromCoordinates failed initially: ${addressResult.errorMessage}");
+          debugPrint(
+              "getAddressFromCoordinates failed initially: ${addressResult.errorMessage}");
         }
         _animateMapToTarget(zoom: 16.0);
       } else {
-        _locationData = initialPosResult.errorMessage ?? localizations.mapFailedToGetInitialLocation;
+        _statusMessage = initialPosResult.errorMessage ??
+            localizations.mapFailedToGetInitialLocation;
         _isErrorOrStatus = true;
-        debugPrint("getInitialPosition failed: ${initialPosResult.errorMessage}");
+        debugPrint(
+            "getInitialPosition failed: ${initialPosResult.errorMessage}");
       }
       _onStateChange();
-      return; 
+      return;
     }
 
     if (_latitude != null && _longitude != null) {
-      final addressResult = await _locationService.getAddressFromCoordinates(_latitude!, _longitude!);
+      final addressResult = await _locationService.getAddressFromCoordinates(
+          _latitude!, _longitude!);
       if (addressResult.success && addressResult.data != null) {
-        _locationData = addressResult.data!;
+        _currentAddressInfo = addressResult.data;
         _isErrorOrStatus = false;
         _lastGeocodedLatitude = _latitude;
         _lastGeocodedLongitude = _longitude;
       } else {
-        debugPrint("getAddressFromCoordinates failed during background update: ${addressResult.errorMessage}");
+        debugPrint(
+            "getAddressFromCoordinates failed during background update: ${addressResult.errorMessage}");
       }
-    } else {
-      debugPrint("MapLocationManager: _fetchInitialLocationAndAddress called with isUpdate=true but lat/lng are null.");
     }
     _onStateChange();
   }
@@ -202,30 +214,33 @@ class MapLocationManager {
   void _setupLocationUpdatesListener(AppLocalizations localizations) async {
     bool serviceEnabled = await _locationService.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      _locationData = localizations.mapLocationServicesDisabled;
+      _statusMessage = localizations.mapLocationServicesDisabled;
       _isErrorOrStatus = true;
-      _latitude = null; _longitude = null;
+      _latitude = null;
+      _longitude = null;
       _onStateChange();
       return;
     }
-    bool permGranted = await _locationService.requestForegroundLocationPermission(); // Changed to Foreground
+    bool permGranted =
+        await _locationService.requestForegroundLocationPermission();
     if (!permGranted) {
-      _locationData = localizations.mapLocationPermissionDenied;
+      _statusMessage = localizations.mapLocationPermissionDenied;
       _isErrorOrStatus = true;
-      _latitude = null; _longitude = null;
+      _latitude = null;
+      _longitude = null;
       _onStateChange();
       return;
     }
 
-    _positionStreamSubscription?.cancel(); 
-    _positionStreamSubscription =
-        _locationService.getPositionStream().listen((geolocator.Position position) async { 
+    _positionStreamSubscription?.cancel();
+    _positionStreamSubscription = _locationService.getPositionStream().listen(
+        (geolocator.Position position) async {
       _latitude = position.latitude;
       _longitude = position.longitude;
 
       bool shouldUpdateAddress = false;
       if (_lastGeocodedLatitude == null || _lastGeocodedLongitude == null) {
-        shouldUpdateAddress = true; 
+        shouldUpdateAddress = true;
       } else {
         double distanceMoved = geolocator.Geolocator.distanceBetween(
           _lastGeocodedLatitude!,
@@ -239,16 +254,17 @@ class MapLocationManager {
       }
 
       if (shouldUpdateAddress) {
-        debugPrint("MapLocationManager: User moved significantly. Re-fetching address...");
+        debugPrint(
+            "MapLocationManager: User moved significantly. Re-fetching address...");
         await _fetchInitialLocationAndAddress(localizations, isUpdate: true);
       } else {
         _onStateChange();
       }
-
     }, onError: (error) {
-      _latitude = null; _longitude = null;
+      _latitude = null;
+      _longitude = null;
       debugPrint("Error in location stream: $error");
-      _onStateChange(); 
+      _onStateChange();
     });
   }
 
@@ -256,7 +272,8 @@ class MapLocationManager {
     if (_targetLatitude != null && _targetLongitude != null) {
       final currentMapController = _getMapController();
       currentMapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(LatLng(_targetLatitude!, _targetLongitude!), zoom),
+        CameraUpdate.newLatLngZoom(
+            LatLng(_targetLatitude!, _targetLongitude!), zoom),
       );
     }
   }
@@ -264,16 +281,17 @@ class MapLocationManager {
   void onMapCreated(GoogleMapController controller) {
     _setMapController(controller);
     if (_targetLatitude != null && _targetLongitude != null) {
-        _animateMapToTarget(zoom: 16.0);
+      _animateMapToTarget(zoom: 16.0);
     } else if (_latitude != null && _longitude != null) {
-        final currentMapController = _getMapController();
-        currentMapController?.animateCamera(
-            CameraUpdate.newLatLngZoom(LatLng(_latitude!, _longitude!), 16.0),
-        );
+      final currentMapController = _getMapController();
+      currentMapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(LatLng(_latitude!, _longitude!), 16.0),
+      );
     }
   }
 
-  void handleMapTapped(LatLng position, BuildContext context, {bool isDistanceCheckEnabled = true}) {
+  void handleMapTapped(LatLng position, BuildContext context,
+      {bool isDistanceCheckEnabled = true}) {
     if (isDistanceCheckEnabled && _latitude != null && _longitude != null) {
       final distance = geolocator.Geolocator.distanceBetween(
         _latitude!,
@@ -299,9 +317,7 @@ class MapLocationManager {
     _animateMapToTarget();
   }
 
-  void handleCameraMove(CameraPosition position) {
-    debugPrint("Camera moved to: Target: ${position.target}, Zoom: ${position.zoom}");
-  }
+  void handleCameraMove(CameraPosition position) {}
 
   Future<void> handleMapLongPressed({
     required BuildContext context,
@@ -315,7 +331,8 @@ class MapLocationManager {
       context: context,
       builder: (BuildContext dialogContext) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
           child: SizedBox(
             width: screenWidth * 0.85,
             height: screenHeight * 0.65,
@@ -323,7 +340,7 @@ class MapLocationManager {
               initialLatitude: currentCameraPosition.target.latitude,
               initialLongitude: currentCameraPosition.target.longitude,
               markers: markersForBigMap,
-              circles: circlesForBigMap, 
+              circles: circlesForBigMap,
               currentZoom: currentCameraPosition.zoom,
             ),
           ),
@@ -337,15 +354,16 @@ class MapLocationManager {
     if (_latitude != null && _longitude != null) {
       _targetLatitude = _latitude;
       _targetLongitude = _longitude;
-      await _fetchInitialLocationAndAddress(localizations, isUpdate: true); 
+      await _fetchInitialLocationAndAddress(localizations, isUpdate: true);
       _animateMapToTarget(zoom: 16.0);
     } else {
       if (ScaffoldMessenger.of(context).mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localizations.mapCurrentUserLocationNotAvailable)),
+          SnackBar(
+              content: Text(localizations.mapCurrentUserLocationNotAvailable)),
         );
       }
-      await _fetchInitialLocationAndAddress(localizations); 
+      await _fetchInitialLocationAndAddress(localizations);
     }
   }
 

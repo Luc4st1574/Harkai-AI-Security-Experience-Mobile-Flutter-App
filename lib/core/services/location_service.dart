@@ -1,3 +1,4 @@
+// lib/core/services/location_service.dart
 // ignore_for_file: avoid_print
 import 'package:flutter/material.dart';
 import 'dart:async';
@@ -12,6 +13,21 @@ class LocationResult<T> {
   final String? errorMessage;
 
   LocationResult({this.data, this.success = true, this.errorMessage});
+}
+
+/// Helper class to hold detailed address components
+class AddressInfo {
+  final String? district;
+  final String? city;
+  final String? country;
+  final String displayText;
+
+  AddressInfo({
+    this.district,
+    this.city,
+    this.country,
+    required this.displayText,
+  });
 }
 
 /// Service class to handle all location-related operations.
@@ -32,7 +48,7 @@ class LocationService {
     return await Geolocator.isLocationServiceEnabled();
   }
 
-  /// Requests foreground location permission (WhenInUse for iOS, Fine/Coarse for Android).
+  /// Requests foreground location permission.
   Future<bool> requestForegroundLocationPermission(
       {bool openSettingsOnError = false}) async {
     debugPrint("LocationService: Requesting foreground location permission...");
@@ -54,13 +70,10 @@ class LocationService {
         if (openSettingsOnError) {
           await perm_handler.openAppSettings();
         }
-        // Give the user time to change settings and return.
         await Future.delayed(const Duration(seconds: 5));
-        // Continue loop to re-check status if user returns from settings.
         continue;
       }
 
-      // If denied (but not permanently), request it.
       debugPrint(
           "LocationService: Requesting foreground location permission...");
       status = await perm_handler.Permission.locationWhenInUse.request();
@@ -69,8 +82,7 @@ class LocationService {
             "LocationService: Foreground location permission granted after request.");
         return true;
       }
-      // If not granted after request, loop will re-check or exit if it becomes permanently denied.
-      await Future.delayed(const Duration(milliseconds: 500)); // Small delay
+      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
 
@@ -89,7 +101,6 @@ class LocationService {
       return true;
     }
 
-    // If not granted, request it.
     status = await perm_handler.Permission.locationAlways.request();
 
     if (status.isGranted) {
@@ -102,7 +113,6 @@ class LocationService {
       debugPrint(
           "LocationService: 'Always' background location permission permanently denied. Opening app settings...");
       await perm_handler.openAppSettings();
-      // No loop here, as this is typically a one-shot request after foreground is obtained.
     }
 
     debugPrint(
@@ -121,7 +131,6 @@ class LocationService {
           success: false, errorMessage: 'Location services are disabled.');
     }
 
-    // MODIFIED: Call foreground permission only
     bool permissionGranted =
         await requestForegroundLocationPermission(openSettingsOnError: true);
     if (!permissionGranted) {
@@ -157,7 +166,7 @@ class LocationService {
   /// Provides a stream of position updates.
   Stream<Position> getPositionStream({
     LocationAccuracy accuracy = LocationAccuracy.low,
-    int distanceFilter = 10, // Update if the user moves 10 meters
+    int distanceFilter = 10,
   }) {
     print(
         "Setting up location updates stream with accuracy: $accuracy, distanceFilter: $distanceFilter");
@@ -169,19 +178,14 @@ class LocationService {
     );
   }
 
-  /// Fetches a human-readable address from geographic coordinates (latitude and longitude).
-  Future<LocationResult<String>> getAddressFromCoordinates(
+  /// Fetches a human-readable address info from geographic coordinates.
+  Future<LocationResult<AddressInfo>> getAddressFromCoordinates(
       double latitude, double longitude) async {
     print("Fetching address for Latitude: $latitude, Longitude: $longitude");
     try {
       final response = await _googleGeocoding.searchByLocation(
         g_geocoding.Location(lat: latitude, lng: longitude),
       );
-
-      print("Full Geocoding Response Status: ${response.status}");
-      if (response.results.isNotEmpty) {
-        print("First Geocoding Result: ${response.results.first.toJson()}");
-      }
 
       if (response.status != "OK") {
         print(
@@ -195,67 +199,105 @@ class LocationService {
       if (response.results.isEmpty) {
         print("No address results found for the given coordinates.");
         return LocationResult(
-            data:
-                'Location: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)} (No address found)');
+            data: AddressInfo(
+                displayText:
+                    'Location: ${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)} (No address found)'));
       }
 
       final place = response.results.first;
 
-      // Variables to store the different parts of the address
-      String? district; // e.g., San Borja (Sublocality)
-      String? city; // e.g., Lima (Locality)
-      String? country; // e.g., Peru
+      String? sublocality;
+      String? locality;
+      String? neighborhood;
+      String? administrativeAreaLevel1;
+      String? administrativeAreaLevel2;
+      String? country;
 
-      // Loop through components to find specific types
       for (var component in place.addressComponents) {
-        // 🟢 ADDED: Explicit check for Sublocality (District)
-        if (component.types.contains("sublocality") ||
-            component.types.contains("sublocality_level_1")) {
-          district = component.longName;
+        final types = component.types;
+        if (types.contains("sublocality") ||
+            types.contains("sublocality_level_1")) {
+          sublocality = component.longName;
         }
-
-        // 🟢 ADDED: Fallback check for Neighborhood if sublocality is missing
-        if (district == null && component.types.contains("neighborhood")) {
-          district = component.longName;
+        if (types.contains("neighborhood")) {
+          neighborhood = component.longName;
         }
-
-        // Check for City (Locality)
-        if (component.types.contains("locality")) {
-          city = component.longName;
+        if (types.contains("locality")) {
+          locality = component.longName;
         }
-
-        // Fallback for city if locality is missing
-        if (component.types.contains("administrative_area_level_1") &&
-            city == null) {
-          city = component.longName;
+        if (types.contains("administrative_area_level_1")) {
+          administrativeAreaLevel1 = component.longName;
         }
-
-        // Check for Country
-        if (component.types.contains("country")) {
+        if (types.contains("administrative_area_level_2")) {
+          administrativeAreaLevel2 = component.longName;
+        }
+        if (types.contains("country")) {
           country = component.longName;
+        }
+      }
+
+      // --- LOGIC UPDATE: PRIORITY CHANGE ---
+
+      // 1. DISTRICT: Prioritize 'locality' because in Lima, district names (La Molina, Miraflores) are in 'locality'.
+      // If 'locality' is missing, fallback to 'sublocality' or 'neighborhood'.
+      String? district = locality ?? sublocality ?? neighborhood;
+
+      // 2. CITY: Prioritize Admin Area 1 (Region) or 2 (Province) to capture "Lima".
+      // We do NOT check 'locality' here because we just assigned it to District.
+      String? city = administrativeAreaLevel1 ?? administrativeAreaLevel2;
+
+      // 3. Cleanup City Name
+      if (city != null) {
+        city = city
+            .replaceAll(
+                RegExp(r'\s*(Region|Province|Provincia|Departamento|de)\s*',
+                    caseSensitive: false),
+                ' ')
+            .trim();
+      }
+
+      // 4. Safety Check: If City ended up being the same as District (rare edge case), clear City
+      // so we don't save "La Molina" as both District and City.
+      if (city != null &&
+          district != null &&
+          city.toLowerCase() == district.toLowerCase()) {
+        // If they match, it likely means we are in a non-capital region where city=district.
+        // But for Lima context, we want City to be "Lima".
+        // If we strictly want to avoid "La Molina" as city, we might leave it null or look for admin2.
+        if (administrativeAreaLevel2 != null &&
+            administrativeAreaLevel2 != city) {
+          city = administrativeAreaLevel2
+              .replaceAll(
+                  RegExp(r'\s*(Province|Provincia)\s*', caseSensitive: false),
+                  ' ')
+              .trim();
         }
       }
 
       print(
           "Parsed Location - District: $district, City: $city, Country: $country");
 
-      // Logic to determine what to show (Prioritize District!)
-      String locationName;
-
+      // 5. Header Display Logic (Unchanged, prioritizes District)
+      String displayText;
       if (district != null && country != null) {
-        // 🟢 This will show "San Borja, Peru"
-        locationName = '$district, $country';
+        displayText = '$district, $country';
       } else if (city != null && country != null) {
-        // Fallback: "Lima, Peru"
-        locationName = '$city, $country';
+        displayText = '$city, $country';
       } else if (district != null) {
-        locationName = district;
+        displayText = district;
       } else {
-        locationName =
+        displayText =
             city ?? country ?? place.formattedAddress ?? "Unknown Location";
       }
 
-      return LocationResult(data: locationName);
+      return LocationResult(
+        data: AddressInfo(
+          district: district,
+          city: city,
+          country: country,
+          displayText: displayText,
+        ),
+      );
     } catch (e) {
       print('Geocoding error: $e');
       return LocationResult(
