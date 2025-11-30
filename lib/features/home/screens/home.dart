@@ -1,5 +1,4 @@
 // lib/features/home/screens/home.dart
-// ... [Existing imports remain unchanged] ...
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,7 +25,11 @@ import '../widgets/incident_buttons.dart';
 import '../widgets/bottom_butons.dart';
 import '../modals/incident_image.dart';
 import 'package:harkai/features/incident_feed/screens/incident_screen.dart';
+
+// Screens
 import '../../places/screens/places_screen.dart';
+import '../../pets/screens/pets_screen.dart'; // NEW IMPORT
+import '../../events/screens/events_screen.dart'; // NEW IMPORT
 
 // Managers
 import '../managers/marker_manager.dart';
@@ -41,7 +44,6 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
-  // ... [Services declaration same as before] ...
   final LocationService _locationService = LocationService();
   final FirestoreService _firestoreService = FirestoreService();
   final PhoneService _phoneService = PhoneService();
@@ -104,7 +106,6 @@ class _HomeState extends State<Home> {
     }
   }
 
-  // ... [_initializeAndCheckOnboarding, _initializeScreenData, _requestInitialPermissions, _checkFirstLaunch, _showAlwaysOnLocationExplanationModal, dispose, _prepareMapMarkers, _getDisplayMarkers, _getMarkersForBigMapModal, _getCirclesForDisplay, _getCirclesForBigMapModal remain the same] ...
   Future<void> _initializeAndCheckOnboarding() async {
     await _initializeScreenData();
     await _checkFirstLaunch();
@@ -286,10 +287,11 @@ class _HomeState extends State<Home> {
         .toSet();
   }
 
-  // UPDATED: Now passes location data
+  // UPDATED: Now handles navigation for Places, Pets, and Events
   Future<void> _handleIncidentButtonPressed(MakerType markerType) async {
     if (!mounted || _localizations == null) return;
 
+    // --- NAVIGATION TO SUB-SCREENS ---
     if (markerType == MakerType.place) {
       Navigator.push(
         context,
@@ -298,18 +300,35 @@ class _HomeState extends State<Home> {
       return;
     }
 
+    if (markerType == MakerType.pet) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PetsScreen()),
+      );
+      return;
+    }
+
+    if (markerType == MakerType.event) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const EventsScreen()),
+      );
+      return;
+    }
+    // --------------------------------
+
     if (markerType == MakerType.emergency) {
       await _handleEmergencyButtonPressed();
       return;
     }
 
+    // Standard incidents (Theft, Fire, Crash, etc.)
     await _dataEventManager.processIncidentReporting(
       context: context,
       localizations: _localizations!,
       newMarkerToSelect: markerType,
       targetLatitude: _mapLocationManager.targetLatitude,
       targetLongitude: _mapLocationManager.targetLongitude,
-      // Pass location details
       district: _mapLocationManager.currentDistrict,
       city: _mapLocationManager.currentCity,
       country: _mapLocationManager.currentCountry,
@@ -334,7 +353,6 @@ class _HomeState extends State<Home> {
     );
   }
 
-  // UPDATED: Now passes location data
   Future<void> _handleEmergencyButtonPressed() async {
     if (!mounted || _localizations == null) return;
     await _dataEventManager.processEmergencyReporting(
@@ -342,7 +360,6 @@ class _HomeState extends State<Home> {
       localizations: _localizations!,
       targetLatitude: _mapLocationManager.targetLatitude,
       targetLongitude: _mapLocationManager.targetLongitude,
-      // Pass location details
       district: _mapLocationManager.currentDistrict,
       city: _mapLocationManager.currentCity,
       country: _mapLocationManager.currentCountry,
@@ -351,7 +368,6 @@ class _HomeState extends State<Home> {
 
   @override
   Widget build(BuildContext context) {
-    // ... [Build method remains largely the same] ...
     _localizations ??= AppLocalizations.of(context)!;
     if (_localizations == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));

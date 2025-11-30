@@ -76,19 +76,9 @@ class IncidentButtonsGridWidget extends StatelessWidget {
           ),
           const SizedBox(height: gridSpacing),
 
-          // Row 3: Event (Left) - Pet (Right)
+          // Row 3: Pet (Full Width)
           Row(
             children: [
-              Expanded(
-                child: _IndividualIncidentButton(
-                  markerType: MakerType.event,
-                  isSelected: selectedIncident == MakerType.event,
-                  onPressed: () => onIncidentButtonPressed(MakerType.event),
-                  onLongPressed: () =>
-                      onIncidentButtonLongPressed(MakerType.event),
-                ),
-              ),
-              const SizedBox(width: gridSpacing),
               Expanded(
                 child: _IndividualIncidentButton(
                   markerType: MakerType.pet,
@@ -102,7 +92,23 @@ class IncidentButtonsGridWidget extends StatelessWidget {
           ),
           const SizedBox(height: gridSpacing),
 
-          // Row 4: Places (Center - Full Width) - AT LAST
+          // Row 4: Event (Full Width)
+          Row(
+            children: [
+              Expanded(
+                child: _IndividualIncidentButton(
+                  markerType: MakerType.event,
+                  isSelected: selectedIncident == MakerType.event,
+                  onPressed: () => onIncidentButtonPressed(MakerType.event),
+                  onLongPressed: () =>
+                      onIncidentButtonLongPressed(MakerType.event),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: gridSpacing),
+
+          // Row 5: Places (Full Width)
           Row(
             children: [
               Expanded(
