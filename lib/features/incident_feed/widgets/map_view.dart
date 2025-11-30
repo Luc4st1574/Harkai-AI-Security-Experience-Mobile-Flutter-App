@@ -26,11 +26,14 @@ class IncidentMapViewContent extends StatefulWidget {
 }
 
 class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
+  // If .env fails, you can paste the key here as a fallback
+  final String hardCodedKey = "";
+
   Set<Marker> _markers = {};
   Set<Circle> _circles = {};
-  Set<Polyline> _polylines = {}; // For showing the path
+  Set<Polyline> _polylines = {};
   bool _isIncidentVisible = true;
-  Position? _currentUserPosition; // To store user's current location
+  Position? _currentUserPosition;
 
   AppLocalizations? _localizations;
   bool _dependenciesInitialized = false;
@@ -49,27 +52,21 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
       _localizations = AppLocalizations.of(context)!;
       if (_isIncidentVisible) {
         _prepareMapElements();
-        _fetchCurrentUserLocationAndRoute(); // Fetch location then route
+        _fetchCurrentUserLocationAndRoute();
       }
       _dependenciesInitialized = true;
     }
   }
 
   void _checkIncidentVisibility() {
-    // If the incident type is 'place', it should always be visible.
     if (widget.incidentTypeForExpiry == MakerType.place) {
-      if (mounted) {
-        setState(() {
-          _isIncidentVisible = true;
-        });
-      }
+      if (mounted) setState(() => _isIncidentVisible = true);
       return;
     }
 
     final now = DateTime.now();
     bool shouldBeVisible = true;
 
-    // UPDATED: Include Event in the 24-hour visibility check along with Pet
     if (widget.incidentTypeForExpiry == MakerType.pet ||
         widget.incidentTypeForExpiry == MakerType.event) {
       final twentyFourHoursAgo = now.subtract(const Duration(days: 1));
@@ -77,7 +74,6 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
         shouldBeVisible = false;
       }
     } else {
-      // For other incident types (fire, crash, theft, emergency)
       final threeHoursAgo = now.subtract(const Duration(hours: 3));
       if (widget.incident.timestamp.toDate().isBefore(threeHoursAgo)) {
         shouldBeVisible = false;
@@ -85,9 +81,7 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
     }
 
     if (mounted && _isIncidentVisible != shouldBeVisible) {
-      setState(() {
-        _isIncidentVisible = shouldBeVisible;
-      });
+      setState(() => _isIncidentVisible = shouldBeVisible);
     }
   }
 
@@ -104,34 +98,61 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
   }
 
   Future<void> _fetchCurrentUserLocationAndRoute() async {
+    // -------------------------------------------------------------
+    // OPTIMIZATION: Check Last Known Position First (Instant)
+    // -------------------------------------------------------------
+    try {
+      final lastKnownPosition = await Geolocator.getLastKnownPosition();
+      if (lastKnownPosition != null) {
+        if (mounted) {
+          setState(() {
+            _currentUserPosition = lastKnownPosition;
+          });
+          debugPrint("📍 MapView: Using Last Known Position (Fast).");
+          _fetchAndDrawRoute(); // Draw route immediately
+        }
+        return; // Exit early to avoid waiting for fresh GPS
+      }
+    } catch (e) {
+      debugPrint("⚠️ MapView: Could not get cached location: $e");
+    }
+
+    // Fallback: If no cached location, fetch fresh (slower)
+    debugPrint("⏳ MapView: Fetching fresh GPS location...");
     final locationResult = await _locationService.getInitialPosition();
+
     if (locationResult.success && locationResult.data != null) {
       if (mounted) {
         setState(() {
           _currentUserPosition = locationResult.data;
         });
-        _fetchAndDrawRoute(); // Now fetch route
+        debugPrint("📍 MapView: Fresh User location found.");
+        _fetchAndDrawRoute();
       }
     } else {
       debugPrint(
-          "Could not get user's current location for route: ${locationResult.errorMessage}");
+          "❌ MapView: Could not get user's current location: ${locationResult.errorMessage}");
     }
   }
 
   Future<void> _fetchAndDrawRoute() async {
-    if (_currentUserPosition == null) {
-      debugPrint("User current position is null, cannot fetch route.");
-      return;
+    if (_currentUserPosition == null) return;
+
+    // Use 'GOOGLE_MAPS_API_KEY' to match your .env file
+    String activeKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? "";
+
+    if (activeKey.isEmpty) {
+      activeKey = hardCodedKey;
     }
 
-    final String? apiKey = dotenv.env['MAPS_KEY'];
-    if (apiKey == null || apiKey.isEmpty) {
-      debugPrint("MAPS_KEY not found in .env for Directions API.");
+    if (activeKey.isEmpty) {
+      debugPrint(
+          "❌ MapView: API Key missing. Ensure GOOGLE_MAPS_API_KEY is in .env");
       return;
     }
 
     final gm_directions.GoogleMapsDirections directions =
-        gm_directions.GoogleMapsDirections(apiKey: apiKey);
+        gm_directions.GoogleMapsDirections(apiKey: activeKey);
 
     final gm_directions.Location origin = gm_directions.Location(
         lat: _currentUserPosition!.latitude,
@@ -140,6 +161,7 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
         lat: widget.incident.latitude, lng: widget.incident.longitude);
 
     try {
+      debugPrint("⏳ MapView: Requesting directions...");
       gm_directions.DirectionsResponse response = await directions.directions(
         origin,
         destination,
@@ -148,8 +170,9 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
 
       if (response.isOkay && response.routes.isNotEmpty) {
         final gm_directions.Route route = response.routes.first;
+
         if (route.overviewPolyline.points.isNotEmpty) {
-          // Decoding polyline
+          // Decode Polyline (Static method in v3.1.0+)
           List<PointLatLng> decodedResult =
               PolylinePoints.decodePolyline(route.overviewPolyline.points);
 
@@ -161,34 +184,38 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
           }
 
           if (polylineCoordinates.isNotEmpty) {
+            final MarkerInfo? markerInfo =
+                getMarkerInfo(widget.incident.type, _localizations!);
+            final Color routeColor = markerInfo?.color ?? Colors.blueAccent;
+
+            // Use withValues for new Flutter versions
+            final Color colorWithAlpha = routeColor.withValues(alpha: 0.8);
+
             final Polyline polyline = Polyline(
               polylineId: const PolylineId('routeToIncident'),
-              // FIX APPLIED: Use the correct method to set color with opacity.
-              color: Colors.blueAccent.withOpacity(0.8),
+              color: colorWithAlpha,
               width: 5,
               points: polylineCoordinates,
               startCap: Cap.roundCap,
               endCap: Cap.roundCap,
               jointType: JointType.round,
+              geodesic: true,
             );
+
             if (mounted) {
               setState(() {
                 _polylines = {polyline};
               });
+              debugPrint("✅ MapView: Polyline drawn successfully.");
             }
-          } else {
-            debugPrint("Directions API: Decoded polyline has no points.");
           }
-        } else {
-          debugPrint(
-              "Directions API: No overview polyline found in the route.");
         }
       } else {
         debugPrint(
-            "Directions API Error: ${response.errorMessage ?? 'Failed to get directions.'}");
+            "❌ MapView: Directions API Error: ${response.errorMessage ?? response.status}");
       }
     } catch (e) {
-      debugPrint("Exception when fetching directions: $e");
+      debugPrint("❌ MapView: Exception: $e");
     }
   }
 
@@ -212,19 +239,17 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
       );
     }
 
-    // Combine incident marker with user location marker (blue dot)
-    // The user's location dot is handled by myLocationEnabled: true
     return GoogleMap(
-      mapType: MapType.terrain,
+      mapType: MapType.normal,
       initialCameraPosition: CameraPosition(
         target: LatLng(widget.incident.latitude, widget.incident.longitude),
         zoom: 14,
       ),
       markers: _markers,
       circles: _circles,
-      polylines: _polylines, // Display the route
-      myLocationEnabled: true, // Show user's blue dot
-      myLocationButtonEnabled: true, // Show button to center on user
+      polylines: _polylines,
+      myLocationEnabled: true,
+      myLocationButtonEnabled: true,
       zoomControlsEnabled: true,
     );
   }

@@ -17,11 +17,14 @@ import 'package:harkai/features/home/utils/extensions.dart';
 class IncidentScreen extends StatefulWidget {
   final MakerType incidentType;
   final User? currentUser;
+  // NEW: Accept current location text to show it instantly (Speed Optimization)
+  final String? currentLocationText;
 
   const IncidentScreen({
     super.key,
     required this.incidentType,
     required this.currentUser,
+    this.currentLocationText,
   });
 
   @override
@@ -37,6 +40,9 @@ class _IncidentScreenState extends State<IncidentScreen> {
   Position? _currentPosition;
   bool _isLoadingInitialData = true;
   String _error = '';
+
+  // NEW: State variable for the header text
+  late String _headerLocationText;
 
   StreamSubscription<Position>? _positionStreamSubscription;
   StreamSubscription<List<IncidenceData>>? _incidentsStreamSubscription;
@@ -57,6 +63,9 @@ class _IncidentScreenState extends State<IncidentScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize header with passed text or default, so it's instant
+    _headerLocationText = widget.currentLocationText ?? "Nearby Area";
+
     // No need to load Google Pay config for testing
     _searchController.addListener(() {
       if (mounted) {
@@ -94,6 +103,8 @@ class _IncidentScreenState extends State<IncidentScreen> {
       if (!mounted) return;
       if (locationResult.success && locationResult.data != null) {
         _currentPosition = locationResult.data;
+        // NEW: Fetch readable address immediately when position is found
+        _updateHeaderAddress(_currentPosition!);
       } else {
         _currentPosition = null;
         _error = locationResult.errorMessage ??
@@ -103,6 +114,24 @@ class _IncidentScreenState extends State<IncidentScreen> {
       if (!mounted) return;
       _currentPosition = null;
       _error = localizations.mapErrorFetchingLocation(e.toString());
+    }
+  }
+
+  // NEW: Helper to fetch address text (City, District)
+  Future<void> _updateHeaderAddress(Position position) async {
+    // If we already have a passed text and haven't moved far, we could skip this.
+    // But fetching ensures it's accurate to the exact coordinates.
+    try {
+      final addressResult = await _locationService.getAddressFromCoordinates(
+          position.latitude, position.longitude);
+
+      if (mounted && addressResult.success && addressResult.data != null) {
+        setState(() {
+          _headerLocationText = addressResult.data!.displayText;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching address for header: $e");
     }
   }
 
@@ -289,6 +318,20 @@ class _IncidentScreenState extends State<IncidentScreen> {
                   50;
 
           _currentPosition = newPosition;
+
+          // NEW: Update address text if user moved significantly (e.g. > 100m)
+          // Using a slightly larger threshold for address text to avoid flickering
+          if (_currentPosition != null &&
+              Geolocator.distanceBetween(
+                    _currentPosition!.latitude,
+                    _currentPosition!.longitude,
+                    newPosition.latitude,
+                    newPosition.longitude,
+                  ) >
+                  100) {
+            _updateHeaderAddress(newPosition);
+          }
+
           if (positionChangedSignificantly) {
             _processIncidentsUpdate(List.from(_allFetchedIncidents));
           }
@@ -647,7 +690,8 @@ class _IncidentScreenState extends State<IncidentScreen> {
                       (Route<dynamic> route) => false);
                 },
                 isLongPressEnabled: false,
-                locationText: "Nearby Area",
+                // UPDATED: Now uses dynamic location text
+                locationText: _headerLocationText,
               ),
               Padding(
                 padding:
