@@ -1,3 +1,4 @@
+// lib/features/incident_feed/widgets/map_view.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_google_maps_webservices/directions.dart'
@@ -68,7 +69,9 @@ class _IncidentMapViewContentState extends State<IncidentMapViewContent> {
     final now = DateTime.now();
     bool shouldBeVisible = true;
 
-    if (widget.incidentTypeForExpiry == MakerType.pet) {
+    // UPDATED: Include Event in the 24-hour visibility check along with Pet
+    if (widget.incidentTypeForExpiry == MakerType.pet ||
+        widget.incidentTypeForExpiry == MakerType.event) {
       final twentyFourHoursAgo = now.subtract(const Duration(days: 1));
       if (widget.incident.timestamp.toDate().isBefore(twentyFourHoursAgo)) {
         shouldBeVisible = false;

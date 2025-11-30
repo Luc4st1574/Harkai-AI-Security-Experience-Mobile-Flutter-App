@@ -337,7 +337,10 @@ class FirestoreService {
           continue;
         }
         bool shouldMarkInvisible = false;
-        if (incidenceType == MakerType.pet) {
+
+        // UPDATED: Check for Event as well as Pet for 24h rule
+        if (incidenceType == MakerType.pet ||
+            incidenceType == MakerType.event) {
           if (docTimestamp.compareTo(petExpiryTimestamp) < 0) {
             shouldMarkInvisible = true;
           }

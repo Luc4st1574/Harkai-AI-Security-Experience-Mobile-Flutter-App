@@ -1,3 +1,4 @@
+// lib/features/incident_feed/screens/incident_screen.dart
 import 'dart:async'; // Required for StreamSubscription
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -334,13 +335,16 @@ class _IncidentScreenState extends State<IncidentScreen> {
           .contains(_searchTerm.toLowerCase()));
     }
 
-    if (widget.incidentType == MakerType.pet) {
+    // UPDATED: Include Event in the 24-hour expiry check along with Pet
+    if (widget.incidentType == MakerType.pet ||
+        widget.incidentType == MakerType.event) {
       final now = DateTime.now();
       final twentyFourHoursAgo = now.subtract(const Duration(days: 1));
       filteredIncidents.removeWhere((incident) {
         return incident.timestamp.toDate().isBefore(twentyFourHoursAgo);
       });
     } else if (widget.incidentType != MakerType.place) {
+      // Standard 3-hour expiry for other types, skipping Places
       final now = DateTime.now();
       final threeHoursAgo = now.subtract(const Duration(hours: 3));
       filteredIncidents.removeWhere((incident) {
