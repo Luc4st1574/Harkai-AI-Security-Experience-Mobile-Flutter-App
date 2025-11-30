@@ -198,6 +198,36 @@ class FirestoreService {
     if (currentUser == null) return false;
 
     try {
+      // 1. Cooldown Check: Ensure 1 hour has passed since the last report of THIS type.
+      // EXCEPTION: Events and Places are paid items, so they don't have this restriction.
+      if (type != MakerType.event && type != MakerType.place) {
+        final QuerySnapshot lastIncidentSnapshot = await _heatPointsCollection
+            .where('userId', isEqualTo: currentUser.uid)
+            .where('type', isEqualTo: type.index)
+            .orderBy('timestamp', descending: true)
+            .limit(1)
+            .get();
+
+        if (lastIncidentSnapshot.docs.isNotEmpty) {
+          final lastDocData =
+              lastIncidentSnapshot.docs.first.data() as Map<String, dynamic>;
+
+          if (lastDocData['timestamp'] != null &&
+              lastDocData['timestamp'] is Timestamp) {
+            final DateTime lastTime =
+                (lastDocData['timestamp'] as Timestamp).toDate();
+            final DateTime now = DateTime.now();
+            final Duration difference = now.difference(lastTime);
+
+            if (difference.inHours < 1) {
+              debugPrint(
+                  'Cooldown active for ${type.name}. Time passed: ${difference.inMinutes} minutes. Must wait 60 minutes.');
+              return false; // Prevent adding the incident
+            }
+          }
+        }
+      }
+
       await _heatPointsCollection.add({
         'userId': currentUser.uid,
         'latitude': latitude,
