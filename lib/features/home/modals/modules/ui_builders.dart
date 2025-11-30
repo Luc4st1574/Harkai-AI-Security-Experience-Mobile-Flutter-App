@@ -19,13 +19,16 @@ class IncidentModalUiBuilders {
   }) {
     return GestureDetector(
       onLongPressStart: canRecordAudio ? (_) => onLongPressStart() : null,
-      onLongPressEnd:
-          currentInputState == MediaInputState.recordingAudio ? (_) => onLongPressEnd() : null,
+      onLongPressEnd: currentInputState == MediaInputState.recordingAudio
+          ? (_) => onLongPressEnd()
+          : null,
       onTap: () {
-        if (canRecordAudio && currentInputState != MediaInputState.recordingAudio) {
+        if (canRecordAudio &&
+            currentInputState != MediaInputState.recordingAudio) {
           ScaffoldMessenger.of(context).removeCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(localizations.incidentModalButtonHoldToRecordReleaseToStop))); // Localized
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(localizations
+                  .incidentModalButtonHoldToRecordReleaseToStop))); // Localized
         } else {
           onTapHint();
         }
@@ -85,9 +88,12 @@ class IncidentModalUiBuilders {
                   color: accentColor,
                   padding: const EdgeInsets.all(16),
                   style: IconButton.styleFrom(
-                    backgroundColor: accentColor.withAlpha((0.15 * 255).toInt()),
+                    backgroundColor:
+                        accentColor.withAlpha((0.15 * 255).toInt()),
                     shape: const CircleBorder(),
-                    side: BorderSide(color: accentColor.withAlpha((0.7 * 255).toInt()), width: 1.5),
+                    side: BorderSide(
+                        color: accentColor.withAlpha((0.7 * 255).toInt()),
+                        width: 1.5),
                     elevation: 2,
                   ),
                   onPressed: onPressedCapture,
@@ -114,9 +120,12 @@ class IncidentModalUiBuilders {
                     color: accentColor,
                     padding: const EdgeInsets.all(16),
                     style: IconButton.styleFrom(
-                      backgroundColor: accentColor.withAlpha((0.15 * 255).toInt()),
+                      backgroundColor:
+                          accentColor.withAlpha((0.15 * 255).toInt()),
                       shape: const CircleBorder(),
-                      side: BorderSide(color: accentColor.withAlpha((0.7 * 255).toInt()), width: 1.5),
+                      side: BorderSide(
+                          color: accentColor.withAlpha((0.7 * 255).toInt()),
+                          width: 1.5),
                       elevation: 2,
                     ),
                     onPressed: onPressedGallery,
@@ -156,6 +165,8 @@ class IncidentModalUiBuilders {
     required VoidCallback? onSubmitWithAudioAndImage,
     required VoidCallback? onSubmitAudioOnlyFromImageAnalyzed,
     required VoidCallback? onClearImageDataAndSubmitAudioOnlyFromAnalyzed,
+    // MODIFIED: Added parameter to control audio-only submission visibility
+    required bool allowAudioOnlySubmit,
   }) {
     List<Widget> buttons = [];
 
@@ -163,9 +174,10 @@ class IncidentModalUiBuilders {
       case MediaInputState.audioRecordedReadyToSend:
         buttons.add(ElevatedButton.icon(
           icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-          label: Text(localizations.incidentModalButtonSendAudioToHarki, // Localized
-              style:
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          label: Text(
+              localizations.incidentModalButtonSendAudioToHarki, // Localized
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
               backgroundColor: accentColor,
               padding:
@@ -177,7 +189,9 @@ class IncidentModalUiBuilders {
         buttons.add(ElevatedButton.icon(
           icon: const Icon(Icons.check_circle_outline,
               color: Colors.white, size: 20),
-          label: Text(localizations.incidentModalButtonConfirmAudioAndProceed, // Localized
+          label: Text(
+              localizations
+                  .incidentModalButtonConfirmAudioAndProceed, // Localized
               style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -191,29 +205,39 @@ class IncidentModalUiBuilders {
         buttons.add(const SizedBox(height: 10));
         buttons.add(TextButton(
             onPressed: onRetryFullProcessAudio,
-            child: Text(localizations.incidentModalButtonRerecordAudio, style: TextStyle(color: accentColor)))); // Localized
+            child: Text(localizations.incidentModalButtonRerecordAudio,
+                style: TextStyle(color: accentColor)))); // Localized
         break;
       case MediaInputState.displayingConfirmedAudio:
-        buttons.add(ElevatedButton.icon(
-          icon: const Icon(Icons.send_outlined, color: Colors.white, size: 20),
-          label: Text(localizations.incidentModalButtonSubmitWithAudioOnly, // Localized
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16)),
-          style: ElevatedButton.styleFrom(
-              backgroundColor: accentColor,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
-          onPressed: onSubmitWithAudioOnlyAfterConfirmation,
-        ));
+        // MODIFIED: Only show "Submit Audio Only" if allowed
+        if (allowAudioOnlySubmit) {
+          buttons.add(ElevatedButton.icon(
+            icon:
+                const Icon(Icons.send_outlined, color: Colors.white, size: 20),
+            label: Text(
+                localizations
+                    .incidentModalButtonSubmitWithAudioOnly, // Localized
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: accentColor,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+            onPressed: onSubmitWithAudioOnlyAfterConfirmation,
+          ));
+        }
         break;
       case MediaInputState.imagePreview:
         buttons.add(ElevatedButton.icon(
-          icon: const Icon(Icons.science_outlined, color: Colors.white, size: 18),
-          label: Text(localizations.incidentModalButtonAnalyzeImageWithHarki, // Localized
-              style:
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          icon:
+              const Icon(Icons.science_outlined, color: Colors.white, size: 18),
+          label: Text(
+              localizations
+                  .incidentModalButtonAnalyzeImageWithHarki, // Localized
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold)),
           style: ElevatedButton.styleFrom(
               backgroundColor: accentColor,
               padding:
@@ -221,17 +245,33 @@ class IncidentModalUiBuilders {
           onPressed: onSendImageToGemini,
         ));
         buttons.add(const SizedBox(height: 10));
-        buttons.add(TextButton(
-            onPressed: onRemoveImageAndGoBackToDecision,
-            child: Text(localizations.incidentModalButtonUseAudioOnlyRemoveImage, // Localized
-                style: TextStyle(color: Colors.grey.shade400))));
+        // MODIFIED: Only show "Remove Image & Go Back" if audio-only submit is allowed
+        // If image is mandatory, removing the image should probably just clear it but not offer "Use Audio Only"
+        if (allowAudioOnlySubmit) {
+          buttons.add(TextButton(
+              onPressed: onRemoveImageAndGoBackToDecision,
+              child: Text(
+                  localizations
+                      .incidentModalButtonUseAudioOnlyRemoveImage, // Localized
+                  style: TextStyle(color: Colors.grey.shade400))));
+        } else {
+          // If mandatory, button text could change to just "Remove Image" or be hidden
+          // For now, let's keep the remove functionality but maybe rephrase or keep as is since it goes back to decision state
+          buttons.add(TextButton(
+              onPressed: onRemoveImageAndGoBackToDecision,
+              child: Text(
+                  "Quitar imagen", // Simplified Spanish label or localized equivalent
+                  style: TextStyle(color: Colors.grey.shade400))));
+        }
         break;
       case MediaInputState.imageAnalyzed:
         if (isImageApprovedByGemini) {
           buttons.add(ElevatedButton.icon(
             icon: const Icon(Icons.check_circle_outline,
                 color: Colors.white, size: 20),
-            label: Text(localizations.incidentModalButtonSubmitWithAudioAndImage, // Localized
+            label: Text(
+                localizations
+                    .incidentModalButtonSubmitWithAudioAndImage, // Localized
                 style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -243,24 +283,42 @@ class IncidentModalUiBuilders {
             onPressed: onSubmitWithAudioAndImage,
           ));
           buttons.add(const SizedBox(height: 10));
-          buttons.add(TextButton(
-              onPressed: onClearImageDataAndSubmitAudioOnlyFromAnalyzed,
-              child: Text(localizations.incidentModalButtonSubmitAudioOnlyInstead, // Localized
-                  style: TextStyle(color: Colors.grey.shade400))));
+          // MODIFIED: Only show "Submit Audio Only Instead" if allowed
+          if (allowAudioOnlySubmit) {
+            buttons.add(TextButton(
+                onPressed: onClearImageDataAndSubmitAudioOnlyFromAnalyzed,
+                child: Text(
+                    localizations
+                        .incidentModalButtonSubmitAudioOnlyInstead, // Localized
+                    style: TextStyle(color: Colors.grey.shade400))));
+          }
         } else {
-          buttons.add(ElevatedButton.icon(
-            icon: const Icon(Icons.send_outlined, color: Colors.white, size: 20),
-            label: Text(localizations.incidentModalButtonSubmitWithAudioOnly, // Localized (reused)
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16)),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: accentColor,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
-            onPressed: onSubmitAudioOnlyFromImageAnalyzed,
-          ));
+          // Image not approved/clear
+          // If image is mandatory, we cannot show "Submit Audio Only"
+          if (allowAudioOnlySubmit) {
+            buttons.add(ElevatedButton.icon(
+              icon: const Icon(Icons.send_outlined,
+                  color: Colors.white, size: 20),
+              label: Text(
+                  localizations
+                      .incidentModalButtonSubmitWithAudioOnly, // Localized (reused)
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: accentColor,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+              onPressed: onSubmitAudioOnlyFromImageAnalyzed,
+            ));
+          } else {
+            // If image is mandatory and analysis failed, user must retake.
+            // Usually they would use the camera controls above, so no specific action button needed here except maybe explicit "Retake" which is covered by camera icon.
+            // We can show a disabled button or nothing.
+            buttons.add(Text("Por favor, suba una imagen válida.",
+                style: TextStyle(color: Colors.redAccent)));
+          }
         }
         break;
       default:
@@ -274,7 +332,8 @@ class IncidentModalUiBuilders {
 
   static Widget buildProcessingIndicator({
     required Color accentColor,
-    required String userInstructionText, // This is passed localized from the caller
+    required String
+        userInstructionText, // This is passed localized from the caller
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 30.0),
@@ -286,7 +345,8 @@ class IncidentModalUiBuilders {
           const SizedBox(height: 15),
           Text(userInstructionText, // Displaying the localized text
               style: TextStyle(
-                  fontSize: 15, color: Colors.white.withAlpha((0.8 * 255).toInt())),
+                  fontSize: 15,
+                  color: Colors.white.withAlpha((0.8 * 255).toInt())),
               textAlign: TextAlign.center),
         ],
       ),
@@ -296,7 +356,8 @@ class IncidentModalUiBuilders {
   static Widget buildErrorControls({
     required AppLocalizations localizations, // Added
     required Color accentColor,
-    required String userInstructionText, // This is passed localized from the caller
+    required String
+        userInstructionText, // This is passed localized from the caller
     required VoidCallback onRetryFullProcess,
   }) {
     return Column(
@@ -306,13 +367,14 @@ class IncidentModalUiBuilders {
           padding: const EdgeInsets.only(bottom: 15.0),
           child: Text(userInstructionText, // Displaying the localized text
               style: TextStyle(
-                  fontSize: 15, color: Colors.white.withAlpha((0.9 * 255).toInt())),
+                  fontSize: 15,
+                  color: Colors.white.withAlpha((0.9 * 255).toInt())),
               textAlign: TextAlign.center),
         ),
         ElevatedButton.icon(
           icon: const Icon(Icons.refresh, color: Colors.white),
-          label:
-              Text(localizations.incidentModalButtonTryAgainFromStart, style: const TextStyle(color: Colors.white)), // Localized
+          label: Text(localizations.incidentModalButtonTryAgainFromStart,
+              style: const TextStyle(color: Colors.white)), // Localized
           style: ElevatedButton.styleFrom(
               backgroundColor: accentColor,
               padding:
@@ -396,7 +458,8 @@ class IncidentModalUiBuilders {
                 Padding(
                   padding: const EdgeInsets.all(4.0),
                   child: Tooltip(
-                    message: localizations.incidentModalImageRemoveTooltip, // Localized
+                    message: localizations
+                        .incidentModalImageRemoveTooltip, // Localized
                     child: InkWell(
                       onTap: onRemoveImage,
                       child: Container(
@@ -405,8 +468,8 @@ class IncidentModalUiBuilders {
                           color: Colors.black.withAlpha((0.5 * 255).toInt()),
                           shape: BoxShape.circle,
                         ),
-                        child:
-                            const Icon(Icons.cancel, color: Colors.white, size: 24),
+                        child: const Icon(Icons.cancel,
+                            color: Colors.white, size: 24),
                       ),
                     ),
                   ),
@@ -418,10 +481,14 @@ class IncidentModalUiBuilders {
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
                 isImageApprovedByGemini
-                    ? localizations.incidentModalImageHarkiLooksGood // Localized
-                    : (geminiImageAnalysisResultText.isNotEmpty // geminiImageAnalysisResultText is data from Gemini
-                        ? localizations.incidentModalImageHarkiFeedback(geminiImageAnalysisResultText) // Localized parameterized string
-                        : localizations.incidentModalImageHarkiAnalysisComplete), // Localized
+                    ? localizations
+                        .incidentModalImageHarkiLooksGood // Localized
+                    : (geminiImageAnalysisResultText
+                            .isNotEmpty // geminiImageAnalysisResultText is data from Gemini
+                        ? localizations.incidentModalImageHarkiFeedback(
+                            geminiImageAnalysisResultText) // Localized parameterized string
+                        : localizations
+                            .incidentModalImageHarkiAnalysisComplete), // Localized
                 style: TextStyle(
                     color: isImageApprovedByGemini
                         ? Colors.greenAccent

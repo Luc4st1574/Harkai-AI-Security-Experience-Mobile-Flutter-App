@@ -17,7 +17,7 @@ import '../utils/markers.dart';
 import 'package:harkai/features/home/utils/extensions.dart';
 
 enum MediaInputState {
-  contactInfoInput, // NEW: State for entering contact info first
+  contactInfoInput,
   idle,
   recordingAudio,
   audioRecordedReadyToSend,
@@ -48,6 +48,9 @@ class IncidentVoiceDescriptionModal extends StatefulWidget {
 
 class _IncidentVoiceDescriptionModalState
     extends State<IncidentVoiceDescriptionModal> with TickerProviderStateMixin {
+  // NEW: Mutable type that can change if Gemini detects a mismatch
+  late MakerType _currentMarkerType;
+
   String? _recordedAudioPath;
   String _geminiAudioProcessedText = '';
   String _confirmedAudioDescription = '';
@@ -77,6 +80,9 @@ class _IncidentVoiceDescriptionModalState
   @override
   void initState() {
     super.initState();
+    // Initialize current marker type from widget configuration
+    _currentMarkerType = widget.markerType;
+
     _mediaServices = IncidentMediaServices();
     _deviceMediaHandler = DeviceMediaHandler();
 
@@ -140,7 +146,6 @@ class _IncidentVoiceDescriptionModalState
     }
 
     if (mounted) {
-      // CHECK: If contact info is needed, start with that state
       if (_needsContactInfo()) {
         _currentInputState = MediaInputState.contactInfoInput;
       } else {
@@ -150,22 +155,31 @@ class _IncidentVoiceDescriptionModalState
     }
   }
 
+  // MODIFIED: Use _currentMarkerType
   bool _needsContactInfo() {
-    return widget.markerType == MakerType.pet ||
-        widget.markerType == MakerType.event ||
-        widget.markerType == MakerType.place;
+    return _currentMarkerType == MakerType.pet ||
+        _currentMarkerType == MakerType.event ||
+        _currentMarkerType == MakerType.place;
+  }
+
+  // NEW: Check if image is mandatory for current type
+  bool _isImageMandatory() {
+    return _currentMarkerType == MakerType.pet ||
+        _currentMarkerType == MakerType.event ||
+        _currentMarkerType == MakerType.place;
   }
 
   void _handleContactSubmit() {
     if (_contactInfoController.text.trim().length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+            backgroundColor: Colors.redAccent,
             content: Text(
-                "Por favor ingrese un número válido (mínimo 6 dígitos).")), // Spanish
+                "Por favor ingrese un número válido (mínimo 6 dígitos). Obligatorio para continuar.",
+                style: TextStyle(color: Colors.white))), // Spanish
       );
       return;
     }
-    // Valid contact info, proceed to audio recording
     setState(() {
       _currentInputState = MediaInputState.idle;
       _updateStatusAndInstructionText();
@@ -257,6 +271,27 @@ class _IncidentVoiceDescriptionModalState
     }
   }
 
+  // NEW: Helper to map Gemini suggested string to enum
+  MakerType? _mapStringToMakerType(String suggestion) {
+    final cleaned = suggestion.trim().toLowerCase();
+    if (cleaned.contains('pet') || cleaned.contains('mascota')) {
+      return MakerType.pet;
+    }
+    if (cleaned.contains('event') || cleaned.contains('evento')) {
+      return MakerType.event;
+    }
+    if (cleaned.contains('place') || cleaned.contains('lugar')) {
+      return MakerType.place;
+    }
+    if (cleaned.contains('crash') || cleaned.contains('accidente')) {
+      return MakerType.crash;
+    }
+    if (cleaned.contains('fire') || cleaned.contains('incendio')) {
+      return MakerType.fire;
+    }
+    return null;
+  }
+
   Future<void> _handleSendAudioToGemini() async {
     if (_localizations == null) return;
     if (_recordedAudioPath == null) {
@@ -266,14 +301,19 @@ class _IncidentVoiceDescriptionModalState
     if (mounted) {
       setState(() {
         _currentInputState = MediaInputState.sendingAudioToGemini;
-        _updateStatusAndInstructionText();
+        // MODIFIED: Update status text to show current type being analyzed
+        _statusText =
+            "Analizando para tipo: ${_currentMarkerType.name.capitalizeAllWords()}...";
+        _userInstructionText =
+            _localizations!.incidentModalInstructionPleaseWait;
       });
     }
 
     try {
       final audioFile = File(_recordedAudioPath!);
       final Uint8List audioBytes = await audioFile.readAsBytes();
-      final String incidentTypeName = widget.markerType.name
+      // MODIFIED: Use _currentMarkerType
+      final String incidentTypeName = _currentMarkerType.name
           .toString()
           .split('.')
           .last
@@ -297,11 +337,25 @@ class _IncidentVoiceDescriptionModalState
                   MediaInputState.audioDescriptionReadyForConfirmation;
               _updateStatusAndInstructionText();
             });
-          } else if (text.startsWith("MISMATCH:") ||
-              text.startsWith("UNCLEAR:")) {
-            _handleError(_geminiAudioProcessedText,
-                isMismatch: text.startsWith("MISMATCH:"),
-                isUnclear: text.startsWith("UNCLEAR:"));
+          } else if (text.startsWith("MISMATCH:")) {
+            // MODIFIED: Automatic switching logic
+            String suggestedTypeStr = text.substring("MISMATCH:".length).trim();
+            MakerType? newType = _mapStringToMakerType(suggestedTypeStr);
+
+            if (newType != null && newType != _currentMarkerType) {
+              setState(() {
+                _currentMarkerType = newType;
+                _statusText =
+                    "Redirigiendo a ${newType.name.toUpperCase()} y reanalizando...";
+              });
+              // RECURSIVE CALL: Re-run analysis with new type immediately
+              await _handleSendAudioToGemini();
+              return;
+            }
+
+            _handleError(_geminiAudioProcessedText, isMismatch: true);
+          } else if (text.startsWith("UNCLEAR:")) {
+            _handleError(_geminiAudioProcessedText, isUnclear: true);
           } else {
             _handleError(
                 _localizations!
@@ -409,7 +463,8 @@ class _IncidentVoiceDescriptionModalState
       final String mimeType = _capturedImageFile!.path.endsWith('.png')
           ? 'image/png'
           : 'image/jpeg';
-      final String incidentTypeName = widget.markerType.name
+      // MODIFIED: Use _currentMarkerType
+      final String incidentTypeName = _currentMarkerType.name
           .toString()
           .split('.')
           .last
@@ -461,12 +516,17 @@ class _IncidentVoiceDescriptionModalState
     if (mounted) {
       setState(() {
         _currentInputState = MediaInputState.sendingAudioToGemini;
-        _updateStatusAndInstructionText();
+        // MODIFIED: Update status text to show current type being analyzed
+        _statusText =
+            "Analizando texto para tipo: ${_currentMarkerType.name.capitalizeAllWords()}...";
+        _userInstructionText =
+            _localizations!.incidentModalInstructionPleaseWait;
       });
     }
 
     try {
-      final incidentTypeName = widget.markerType.name
+      // MODIFIED: Use _currentMarkerType
+      final incidentTypeName = _currentMarkerType.name
           .toString()
           .split('.')
           .last
@@ -490,11 +550,26 @@ class _IncidentVoiceDescriptionModalState
                   MediaInputState.audioDescriptionReadyForConfirmation;
               _updateStatusAndInstructionText();
             });
-          } else if (response.startsWith("MISMATCH:") ||
-              response.startsWith("UNCLEAR:")) {
-            _handleError(_geminiAudioProcessedText,
-                isMismatch: response.startsWith("MISMATCH:"),
-                isUnclear: response.startsWith("UNCLEAR:"));
+          } else if (response.startsWith("MISMATCH:")) {
+            // MODIFIED: Automatic switching logic for text
+            String suggestedTypeStr =
+                response.substring("MISMATCH:".length).trim();
+            MakerType? newType = _mapStringToMakerType(suggestedTypeStr);
+
+            if (newType != null && newType != _currentMarkerType) {
+              setState(() {
+                _currentMarkerType = newType;
+                _statusText =
+                    "Redirigiendo a ${newType.name.toUpperCase()} y reanalizando texto...";
+              });
+              // RECURSIVE CALL: Re-run text analysis with new type immediately
+              await _handleSendTextToGemini();
+              return;
+            }
+
+            _handleError(_geminiAudioProcessedText, isMismatch: true);
+          } else if (response.startsWith("UNCLEAR:")) {
+            _handleError(_geminiAudioProcessedText, isUnclear: true);
           } else {
             _handleError(
                 _localizations!
@@ -568,9 +643,6 @@ class _IncidentVoiceDescriptionModalState
       }
       if (updateState) {
         setState(() {
-          // If we are clearing all data, and contact info is needed,
-          // we should theoretically go back to idle (recording), NOT contact info.
-          // Contact info persists in the controller.
           _currentInputState = MediaInputState.idle;
           _updateStatusAndInstructionText();
         });
@@ -594,13 +666,26 @@ class _IncidentVoiceDescriptionModalState
       return;
     }
 
-    // Secondary check for Contact Info (just in case)
     if (_needsContactInfo() && _contactInfoController.text.trim().length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
+            backgroundColor: Colors.redAccent,
             content: Text(
                 "Por favor ingrese un número válido (mínimo 6 dígitos).")), // Spanish
       );
+      return;
+    }
+
+    // MODIFIED: Enforce mandatory image for specific types
+    if (_isImageMandatory() && _capturedImageFile == null) {
+      _handleError(
+          "Es obligatorio adjuntar una imagen para este tipo de reporte."); // Hardcoded Spanish
+      if (mounted) {
+        setState(() {
+          _currentInputState = MediaInputState.displayingConfirmedAudio;
+          _updateStatusAndInstructionText();
+        });
+      }
       return;
     }
 
@@ -617,7 +702,8 @@ class _IncidentVoiceDescriptionModalState
           storageService: _storageService,
           imageFile: _capturedImageFile!,
           userId: _currentUser!.uid,
-          incidentType: widget.markerType.name);
+          // MODIFIED: Use _currentMarkerType
+          incidentType: _currentMarkerType.name);
 
       if (_uploadedImageUrl == null && mounted) {
         _handleError(_localizations!.incidentModalErrorFailedToUploadImage);
@@ -636,6 +722,8 @@ class _IncidentVoiceDescriptionModalState
           'imageUrl': _uploadedImageUrl,
           'contactInfo':
               _needsContactInfo() ? _contactInfoController.text.trim() : null,
+          // NEW: Return the final, potentially changed, marker type
+          'finalMarkerType': _currentMarkerType,
         });
       }
     } else {
@@ -665,6 +753,8 @@ class _IncidentVoiceDescriptionModalState
       await _initializeModal();
     } else if (mounted) {
       setState(() {
+        // Reset type back to original if retrying completely
+        _currentMarkerType = widget.markerType;
         _currentInputState = MediaInputState.idle;
         _updateStatusAndInstructionText();
       });
@@ -696,9 +786,10 @@ class _IncidentVoiceDescriptionModalState
       return;
     }
 
-    final markerDetails = getMarkerInfo(widget.markerType, _localizations!);
+    // MODIFIED: Use _currentMarkerType
+    final markerDetails = getMarkerInfo(_currentMarkerType, _localizations!);
     final incidentName =
-        markerDetails?.title ?? widget.markerType.name.capitalizeAllWords();
+        markerDetails?.title ?? _currentMarkerType.name.capitalizeAllWords();
 
     switch (_currentInputState) {
       case MediaInputState.contactInfoInput:
@@ -743,10 +834,13 @@ class _IncidentVoiceDescriptionModalState
             .incidentModalInstructionConfirmAudio(_geminiAudioProcessedText);
         break;
       case MediaInputState.displayingConfirmedAudio:
-        _statusText = _localizations!.incidentModalStatusStep2AddImage;
-        _userInstructionText = _localizations!
-            .incidentModalInstructionAddImageOrSubmit(
-                _confirmedAudioDescription);
+        // MODIFIED: Hardcoded Spanish text for mandatory vs optional images
+        _statusText = _isImageMandatory()
+            ? "Paso 2: Foto Obligatoria"
+            : "Paso 2: Añadir Imagen (Opcional)";
+        _userInstructionText = _isImageMandatory()
+            ? "Para este tipo de incidente (${incidentName}), ES OBLIGATORIO adjuntar una evidencia visual antes de enviar."
+            : "Puede adjuntar una imagen como evidencia adicional, o enviar el reporte solo con el audio confirmado.";
         break;
       case MediaInputState.awaitingImageCapture:
         _statusText = _localizations!.incidentModalStatusCapturingImage;
@@ -813,8 +907,9 @@ class _IncidentVoiceDescriptionModalState
       });
     }
 
+    // MODIFIED: Use _currentMarkerType
     final MarkerInfo? markerDetails =
-        getMarkerInfo(widget.markerType, _localizations!);
+        getMarkerInfo(_currentMarkerType, _localizations!);
     final Color accentColor = markerDetails?.color ?? Colors.blueGrey;
 
     bool isProcessingAny =
@@ -839,7 +934,10 @@ class _IncidentVoiceDescriptionModalState
             _currentInputState == MediaInputState.sendingImageToGemini ||
             _currentInputState == MediaInputState.imageAnalyzed;
 
-    final bool showGalleryButton = widget.markerType == MakerType.place;
+    // MODIFIED: Use _currentMarkerType for gallery check
+    final bool showGalleryButton = _currentMarkerType == MakerType.place ||
+        _currentMarkerType == MakerType.pet ||
+        _currentMarkerType == MakerType.event;
 
     return PopScope(
       canPop: !isProcessingAny &&
@@ -984,24 +1082,41 @@ class _IncidentVoiceDescriptionModalState
                             maxLines: 3,
                           ),
                           const SizedBox(height: 10),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.send_rounded,
-                                color: Colors.white, size: 18),
-                            label: Text(
-                                _localizations!
-                                    .incidentModalButtonSendTextToHarki,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold)),
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: accentColor,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 12)),
-                            onPressed: _handleSendTextToGemini,
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              TextButton.icon(
+                                icon: const Icon(Icons.mic,
+                                    color: Colors.white70, size: 18),
+                                label: const Text("Usar Audio",
+                                    style: TextStyle(color: Colors.white70)),
+                                onPressed: () {
+                                  setState(() {
+                                    _currentInputState = MediaInputState.idle;
+                                    _updateStatusAndInstructionText();
+                                  });
+                                },
+                              ),
+                              ElevatedButton.icon(
+                                icon: const Icon(Icons.send_rounded,
+                                    color: Colors.white, size: 18),
+                                label: Text(
+                                    _localizations!
+                                        .incidentModalButtonSendTextToHarki,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold)),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: accentColor,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 12)),
+                                onPressed: _handleSendTextToGemini,
+                              ),
+                            ],
                           )
                         ],
                       ),
-                    if (isStep1Active)
+                    if (isStep1Active) ...[
                       IncidentModalUiBuilders.buildMicInputControl(
                         context: context,
                         canRecordAudio: _hasMicPermission &&
@@ -1014,6 +1129,21 @@ class _IncidentVoiceDescriptionModalState
                         onTapHint: _onTapMicHintOrPermissionRecheck,
                         localizations: _localizations!,
                       ),
+                      if (_currentInputState == MediaInputState.idle &&
+                          _needsContactInfo())
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _currentInputState =
+                                  MediaInputState.contactInfoInput;
+                              _updateStatusAndInstructionText();
+                            });
+                          },
+                          child: Text("Editar Contacto",
+                              style: TextStyle(
+                                  color: Colors.white.withAlpha(150))),
+                        ),
+                    ],
                     if (showStep2ImageRelatedUI &&
                         _currentInputState !=
                             MediaInputState.sendingImageToGemini &&
@@ -1030,6 +1160,16 @@ class _IncidentVoiceDescriptionModalState
                         ),
                       ),
                     const SizedBox(height: 20),
+                    if (_currentInputState ==
+                        MediaInputState.displayingConfirmedAudio)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10.0),
+                        child: TextButton(
+                          onPressed: _handleRetryFullProcess,
+                          child: const Text("Volver / Editar Descripción",
+                              style: TextStyle(color: Colors.white70)),
+                        ),
+                      ),
                     IncidentModalUiBuilders.buildActionButtons(
                       context: context,
                       currentInputState: _currentInputState,
@@ -1053,6 +1193,9 @@ class _IncidentVoiceDescriptionModalState
                         _handleFinalSubmitIncident();
                       },
                       localizations: _localizations!,
+                      // MODIFIED: Pass flag to hide/disable "submit without image" button based on type
+                      // NOTE: You need to update IncidentModalUiBuilders.buildActionButtons to accept this parameter.
+                      allowAudioOnlySubmit: !_isImageMandatory(),
                     ),
                   ],
                 ),
